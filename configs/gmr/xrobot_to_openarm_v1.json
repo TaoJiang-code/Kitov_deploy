@@ -1,0 +1,231 @@
+{
+    "robot_root_name": "openarm_body_link0",
+    "human_root_name": "Spine2",
+    "ground_height": 0.0,
+    "human_height_assumption": 1.8,
+    "target_origin": {
+        "human_origin": "Spine2",
+        "root_rotation_body": "Spine2",
+        "lock_root_yaw": true,
+        "heading_yaw_offset_deg": -90.0,
+        "robot_origin": "openarm_body_link0",
+        "position_offset": [
+            0.0,
+            0.0,
+            0.7
+        ],
+        "rotation_offset": [
+            1.0,
+            0,
+            0,
+            0
+        ]
+    },
+    "use_ik_match_table1": true,
+    "use_ik_match_table2": true,
+    "human_scale_table": {
+        "Spine2": 1.0,
+        "Left_Shoulder": 0.75,
+        "Right_Shoulder": 0.75,
+        "Left_Elbow": 0.75,
+        "Right_Elbow": 0.75,
+        "Left_Hand": 0.75,
+        "Right_Hand": 0.75
+    },
+    "ik_match_table1": {
+        "openarm_left_link3": [
+            "Left_Shoulder",
+            0.0,
+            100.0,
+            [
+                0.08,
+                0.12,
+                0.0
+            ],
+            [
+                0.14701576,
+                0.6916548,
+                -0.14701576,
+                -0.6916548
+            ]
+        ],
+        "openarm_left_link4": [
+            "Left_Elbow",
+            0.0,
+            10.0,
+            [
+                0.07,
+                0.14,
+                0.0
+            ],
+            [
+                -0.08541935,
+                -0.70934319,
+                0.07455497,
+                0.69568479
+            ]
+        ],
+        "openarm_left_link7": [
+            "Left_Hand",
+            0.0,
+            10.0,
+            [
+                0.1,
+                0.15,
+                0.0
+            ],
+            [
+                -0.09100057,
+                -0.78126922,
+                0.10285604,
+                0.60889896
+            ]
+        ],
+        "openarm_right_link3": [
+            "Right_Shoulder",
+            0.0,
+            100.0,
+            [
+                0.0,
+                -0.15,
+                0.0
+            ],
+            [
+                0.68898368,
+                -0.15906441,
+                0.68898368,
+                -0.15906441
+            ]
+        ],
+        "openarm_right_link4": [
+            "Right_Elbow",
+            0.0,
+            10.0,
+            [
+                0.0,
+                -0.15,
+                0.03
+            ],
+            [
+                0.69291141,
+                -0.14097441,
+                0.60926383,
+                -0.35888381
+            ]
+        ],
+        "openarm_right_link7": [
+            "Right_Hand",
+            0.0,
+            10.0,
+            [
+                0.07,
+                -0.2,
+                0.04
+            ],
+            [
+                0.67620958,
+                -0.20673801,
+                0.67620958,
+                -0.20673801
+            ]
+        ]
+    },
+    "ik_match_table2": {
+        "openarm_left_link4": [
+            "Left_Elbow",
+            10,
+            5,
+            [
+                0.07,
+                0.14,
+                0.0
+            ],
+            [
+                -0.08541935,
+                -0.70934319,
+                0.07455497,
+                0.69568479
+            ]
+        ],
+        "openarm_left_link7": [
+            "Left_Hand",
+            10,
+            5,
+            [
+                0.1,
+                0.15,
+                0.0
+            ],
+            [
+                -0.09100057,
+                -0.78126922,
+                0.10285604,
+                0.60889896
+            ]
+        ],
+        "openarm_right_link3": [
+            "Right_Shoulder",
+            5,
+            100,
+            [
+                0.0,
+                -0.15,
+                0.0
+            ],
+            [
+                0.68898368,
+                -0.15906441,
+                0.68898368,
+                -0.15906441
+            ]
+        ],
+        "openarm_right_link4": [
+            "Right_Elbow",
+            10,
+            5,
+            [
+                0.0,
+                -0.15,
+                0.03
+            ],
+            [
+                0.69291141,
+                -0.14097441,
+                0.60926383,
+                -0.35888381
+            ]
+        ],
+        "openarm_right_link7": [
+            "Right_Hand",
+            10,
+            5,
+            [
+                0.07,
+                -0.2,
+                0.04
+            ],
+            [
+                0.67620958,
+                -0.20673801,
+                0.67620958,
+                -0.20673801
+            ]
+        ],
+        "openarm_left_link3": [
+            "Left_Shoulder",
+            5,
+            100,
+            [
+                0.08,
+                0.12,
+                0.0
+            ],
+            [
+                0.14701576,
+                0.6916548,
+                -0.14701576,
+                -0.6916548
+            ]
+        ]
+    }
+}

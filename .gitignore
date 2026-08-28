@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local environments
+.env
+.venv/
+venv/
+env/
+
+# Editor / Codex local state
+.vscode/
+.idea/
+.codex/
+.agents/
+
+# Runtime logs and crash dumps
+*.log
+MUJOCO_LOG.TXT
+core
+core.*
+*.core
+
+# XRobot / retargeting captures
+date/
+recordings/
+
+# Temporary build/download workspaces
+tmp/
+build/
+dist/
+*.egg-info/
+
+# Model artifacts copied in manually
+models/**/*.onnx
+models/**/*.pt
+models/**/*.pth
+models/**/*.ckpt
+models/**/*.safetensors
+models/**/*.bin
+models/**/*.engine
+
+# Native build outputs
+*.so
+*.o
+*.a
+*.dylib
+*.dll

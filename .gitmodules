@@ -1,0 +1,6 @@
+[submodule "Glush_Zoo"]
+	path = Glush_Zoo
+	url = https://github.com/TaoJiang-code/Glush_Zoo.git
+[submodule "third_party/openarm_can"]
+	path = third_party/openarm_can
+	url = https://github.com/enactic/openarm_can.git

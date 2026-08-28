@@ -1,0 +1,213 @@
+{
+  "schema": "kitov_deploy.openarm_hardware.v1",
+  "robot": "openarm_v1",
+  "xml_path": "Glush_Zoo/openarm_v1/mjcf/scene.xml",
+  "safety": {
+    "recv_timeout_us": 500,
+    "enable_recv_timeout_us": 2000,
+    "watchdog_timeout_s": 0.25,
+    "default_max_velocity_rad_s": 5
+  },
+  "default_kp": 1.0,
+  "default_kd": 0.2,
+  "buses": [
+    {
+      "side": "right",
+      "interface": "can0",
+      "can_fd": true,
+      "enabled": true,
+      "motors": [
+        {
+          "joint_name": "openarm_right_joint1",
+          "motor_type": "DM8009",
+          "send_can_id": "0x01",
+          "recv_can_id": "0x11",
+          "sign": 1.0,
+          "zero_offset": 0.0,
+          "kp": 1.0,
+          "kd": 0.2,
+          "max_velocity_rad_s": 2.0,
+          "hardware_lower": null,
+          "hardware_upper": null
+        },
+        {
+          "joint_name": "openarm_right_joint2",
+          "motor_type": "DM8009",
+          "send_can_id": "0x02",
+          "recv_can_id": "0x12",
+          "sign": 1.0,
+          "zero_offset": 0.0,
+          "kp": 1.0,
+          "kd": 0.2,
+          "max_velocity_rad_s": 2.0,
+          "hardware_lower": null,
+          "hardware_upper": null
+        },
+        {
+          "joint_name": "openarm_right_joint3",
+          "motor_type": "DM4340",
+          "send_can_id": "0x03",
+          "recv_can_id": "0x13",
+          "sign": 1.0,
+          "zero_offset": 0.0,
+          "kp": 1.0,
+          "kd": 0.2,
+          "max_velocity_rad_s": 2.0,
+          "hardware_lower": null,
+          "hardware_upper": null
+        },
+        {
+          "joint_name": "openarm_right_joint4",
+          "motor_type": "DM4340",
+          "send_can_id": "0x04",
+          "recv_can_id": "0x14",
+          "sign": 1.0,
+          "zero_offset": 0.0,
+          "kp": 1.0,
+          "kd": 0.2,
+          "max_velocity_rad_s": 2.0,
+          "hardware_lower": null,
+          "hardware_upper": null
+        },
+        {
+          "joint_name": "openarm_right_joint5",
+          "motor_type": "DM4310",
+          "send_can_id": "0x05",
+          "recv_can_id": "0x15",
+          "sign": 1.0,
+          "zero_offset": 0.0,
+          "kp": 0.8,
+          "kd": 0.15,
+          "max_velocity_rad_s": 2.0,
+          "hardware_lower": null,
+          "hardware_upper": null
+        },
+        {
+          "joint_name": "openarm_right_joint6",
+          "motor_type": "DM4310",
+          "send_can_id": "0x06",
+          "recv_can_id": "0x16",
+          "sign": 1.0,
+          "zero_offset": 0.0,
+          "kp": 0.8,
+          "kd": 0.15,
+          "max_velocity_rad_s": 2.0,
+          "hardware_lower": null,
+          "hardware_upper": null
+        },
+        {
+          "joint_name": "openarm_right_joint7",
+          "motor_type": "DM4310",
+          "send_can_id": "0x07",
+          "recv_can_id": "0x17",
+          "sign": 1.0,
+          "zero_offset": 0.0,
+          "kp": 0.8,
+          "kd": 0.15,
+          "max_velocity_rad_s": 2.0,
+          "hardware_lower": null,
+          "hardware_upper": null
+        }
+      ]
+    },
+    {
+      "side": "left",
+      "interface": "can1",
+      "can_fd": true,
+      "enabled": true,
+      "motors": [
+        {
+          "joint_name": "openarm_left_joint1",
+          "motor_type": "DM8009",
+          "send_can_id": "0x01",
+          "recv_can_id": "0x11",
+          "sign": 1.0,
+          "zero_offset": 0.0,
+          "kp": 1.0,
+          "kd": 0.2,
+          "max_velocity_rad_s": 2.0,
+          "hardware_lower": null,
+          "hardware_upper": null
+        },
+        {
+          "joint_name": "openarm_left_joint2",
+          "motor_type": "DM8009",
+          "send_can_id": "0x02",
+          "recv_can_id": "0x12",
+          "sign": 1.0,
+          "zero_offset": 0.0,
+          "kp": 1.0,
+          "kd": 0.2,
+          "max_velocity_rad_s": 2.0,
+          "hardware_lower": null,
+          "hardware_upper": null
+        },
+        {
+          "joint_name": "openarm_left_joint3",
+          "motor_type": "DM4340",
+          "send_can_id": "0x03",
+          "recv_can_id": "0x13",
+          "sign": 1.0,
+          "zero_offset": 0.0,
+          "kp": 1.0,
+          "kd": 0.2,
+          "max_velocity_rad_s": 2.0,
+          "hardware_lower": null,
+          "hardware_upper": null
+        },
+        {
+          "joint_name": "openarm_left_joint4",
+          "motor_type": "DM4340",
+          "send_can_id": "0x04",
+          "recv_can_id": "0x14",
+          "sign": 1.0,
+          "zero_offset": 0.0,
+          "kp": 1.0,
+          "kd": 0.2,
+          "max_velocity_rad_s": 2.0,
+          "hardware_lower": null,
+          "hardware_upper": null
+        },
+        {
+          "joint_name": "openarm_left_joint5",
+          "motor_type": "DM4310",
+          "send_can_id": "0x05",
+          "recv_can_id": "0x15",
+          "sign": 1.0,
+          "zero_offset": 0.0,
+          "kp": 0.8,
+          "kd": 0.15,
+          "max_velocity_rad_s": 2.0,
+          "hardware_lower": null,
+          "hardware_upper": null
+        },
+        {
+          "joint_name": "openarm_left_joint6",
+          "motor_type": "DM4310",
+          "send_can_id": "0x06",
+          "recv_can_id": "0x16",
+          "sign": 1.0,
+          "zero_offset": 0.0,
+          "kp": 0.8,
+          "kd": 0.15,
+          "max_velocity_rad_s": 2.0,
+          "hardware_lower": null,
+          "hardware_upper": null
+        },
+        {
+          "joint_name": "openarm_left_joint7",
+          "motor_type": "DM4310",
+          "send_can_id": "0x07",
+          "recv_can_id": "0x17",
+          "sign": 1.0,
+          "zero_offset": 0.0,
+          "kp": 0.8,
+          "kd": 0.15,
+          "max_velocity_rad_s": 2.0,
+          "hardware_lower": null,
+          "hardware_upper": null
+        }
+      ]
+    }
+  ]
+}

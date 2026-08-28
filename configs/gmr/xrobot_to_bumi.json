@@ -1,0 +1,51 @@
+{
+    "robot_root_name": "base_link",
+    "human_root_name": "Pelvis",
+    "ground_height": 0.0,
+    "human_height_assumption": 1.8,
+    "use_ik_match_table1": true,
+    "use_ik_match_table2": true,
+    "human_scale_table": {
+        "Pelvis": 0.45,
+        "Spine3": 0.4,
+        "Left_Hip": 1.0,
+        "Right_Hip": 1.0,
+        "Left_Knee": 0.55,
+        "Right_Knee": 0.55,
+        "Left_Foot": 0.51,
+        "Right_Foot": 0.51,
+        "Left_Shoulder": 0.51,
+        "Right_Shoulder": 0.51,
+        "Left_Elbow": 0.35,
+        "Right_Elbow": 0.35
+    },
+    "ik_match_table1": {
+        "base_link": ["Pelvis", 0, 30, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "waist_yaw_link": ["Spine3", 0, 100, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "l_leg_yaw_link": ["Left_Hip", 0, 10, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "l_knee_pitch_link": ["Left_Knee", 0, 10, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "l_ankle_roll_link": ["Left_Foot", 20, 10, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "r_leg_yaw_link": ["Right_Hip", 0, 10, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "r_knee_pitch_link": ["Right_Knee", 0, 10, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "r_ankle_roll_link": ["Right_Foot", 20, 10, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "l_arm_yaw_link": ["Left_Shoulder", 0, 30, [0.0, 0.0, 0.0], [0.7071067811865475, 0.0, 0.7071067811865475, 0.0]],
+        "l_elbow_pitch_link": ["Left_Elbow", 0, 10, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]],
+        "r_arm_yaw_link": ["Right_Shoulder", 0, 30, [0.0, 0.0, 0.0], [0.0, 0.7071067811865475, 0.0, -0.7071067811865475]],
+        "r_elbow_pitch_link": ["Right_Elbow", 0, 10, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]
+    },
+    "ik_match_table2": {
+        "base_link": ["Pelvis", 100, 10, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "waist_yaw_link": ["Spine3", 0, 30, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "l_leg_yaw_link": ["Left_Hip", 0, 5, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "l_knee_pitch_link": ["Left_Knee", 5, 5, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "l_ankle_roll_link": ["Left_Foot", 100, 20, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "r_leg_yaw_link": ["Right_Hip", 0, 5, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "r_knee_pitch_link": ["Right_Knee", 5, 5, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "r_ankle_roll_link": ["Right_Foot", 100, 20, [0.0, 0.0, 0.0], [-0.5, 0.5, -0.5, -0.5]],
+        "l_arm_yaw_link": ["Left_Shoulder", 20, 20, [0.0, 0.0, 0.0], [0.7071067811865475, 0.0, 0.7071067811865475, 0.0]],
+        "l_elbow_pitch_link": ["Left_Elbow", 20, 5, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]],
+        "r_arm_yaw_link": ["Right_Shoulder", 20, 20, [0.0, 0.0, 0.0], [0.0, 0.7071067811865475, 0.0, -0.7071067811865475]],
+        "r_elbow_pitch_link": ["Right_Elbow", 20, 5, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]
+    }
+}
+

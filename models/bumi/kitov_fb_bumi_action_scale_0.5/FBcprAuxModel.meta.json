@@ -1,0 +1,43 @@
+{
+  "actor_input_dim": 345,
+  "actor_input_dims": {
+    "history_actor": 276,
+    "last_action": 21,
+    "state": 48
+  },
+  "actor_input_keys": [
+    "state",
+    "last_action",
+    "history_actor"
+  ],
+  "actor_obs_dim": 601,
+  "control_joint_names": [
+    "waist_yaw_joint",
+    "l_arm_pitch_joint",
+    "l_arm_roll_joint",
+    "l_arm_yaw_joint",
+    "l_elbow_pitch_joint",
+    "r_arm_pitch_joint",
+    "r_arm_roll_joint",
+    "r_arm_yaw_joint",
+    "r_elbow_pitch_joint",
+    "l_leg_pitch_joint",
+    "l_leg_roll_joint",
+    "l_leg_yaw_joint",
+    "l_knee_pitch_joint",
+    "l_ankle_pitch_joint",
+    "l_ankle_roll_joint",
+    "r_leg_pitch_joint",
+    "r_leg_roll_joint",
+    "r_leg_yaw_joint",
+    "r_knee_pitch_joint",
+    "r_ankle_pitch_joint",
+    "r_ankle_roll_joint"
+  ],
+  "num_dof": 21,
+  "output_action_dim": 21,
+  "robot_config_path": "/home/ubuntu/robocode/Kitov/configs/robots/bumi.yaml",
+  "robot_name": "bumi",
+  "xml_path": "/home/ubuntu/robocode/Kitov/Glush_Zoo/bumi/mjcf/bumi.xml",
+  "z_dim": 256
+}
