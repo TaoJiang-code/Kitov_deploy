@@ -102,26 +102,29 @@ OpenArm CAN SDK 位置：
 third_party/openarm_can
 ```
 
-## 创建 Conda 环境
+## 创建 uv 环境
 
 ```bash
-conda create -n Kitov_deploy python=3.10 -y
-conda activate Kitov_deploy
+cd /home/unitree/robot_code/Kitov/Kitov_deploy
+uv venv --python 3.10
+uv sync --inexact
 ```
 
-安装运行依赖：
+如果当前机器还没有 `uv`：
 
 ```bash
-conda install -c conda-forge pybind11 libstdcxx-ng -y
-pip install numpy scipy pyzmq
-pip install mujoco mink daqp 'qpsolvers[proxqp]' loop-rate-limiters rich tqdm protobuf imageio onnxruntime
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
+Python 依赖由 `pyproject.toml` 管理。这里用 `--inexact` 是为了保留手动安装进
+`.venv` 的本地 binding。`uv` 只负责 Python 包；`XRoboToolkit PC
+Service`、`xrobotoolkit_sdk`、`openarm_can` 这种服务端或 C++/pybind 绑定仍然要装到
+当前 `.venv` 里。
 
 验证核心依赖：
 
 ```bash
-python - <<'PY'
+uv run python - <<'PY'
 import numpy, scipy, zmq
 import mujoco, mink, qpsolvers, daqp, loop_rate_limiters, rich, imageio
 import onnxruntime
@@ -131,10 +134,17 @@ PY
 
 ## XRobot Python SDK
 
-`xrobotoolkit_sdk` 必须安装在 `Kitov_deploy` conda 环境里。验证方式：
+`xrobotoolkit_sdk` 必须安装在当前 `.venv` 里。之前装在 conda 环境里的 SDK 不会自动进入
+uv 环境。如果还保留了之前的 pybind 工作区，可以直接装到当前 `.venv`：
 
 ```bash
-python - <<'PY'
+uv pip install /home/unitree/robot_code/Kitov/Kitov_teleop_workspace/XRoboToolkit-PC-Service-Pybind
+```
+
+验证方式：
+
+```bash
+uv run python - <<'PY'
 import xrobotoolkit_sdk as xrt
 print("xrobotoolkit_sdk import ok")
 print("init:", hasattr(xrt, "init"))
@@ -198,8 +208,7 @@ pkill -f RoboticsServiceProcess
 
 ```bash
 cd /home/unitree/robot_code/Kitov/Kitov_deploy
-conda activate Kitov_deploy
-python scripts/debug/xrobot_probe.py --hz 50 --print-every 1
+uv run python scripts/debug/xrobot_probe.py --hz 50 --print-every 1
 ```
 
 健康输出大致应该是：
@@ -215,7 +224,7 @@ A/B/X/Y 按钮状态能响应
 如果 callback 模式不可用，可以强制使用 polling 模式：
 
 ```bash
-python scripts/debug/xrobot_probe.py --mode polling --hz 50 --print-every 1
+uv run python scripts/debug/xrobot_probe.py --mode polling --hz 50 --print-every 1
 ```
 
 ## 运行在线 GMR 重定向
@@ -223,55 +232,55 @@ python scripts/debug/xrobot_probe.py --mode polling --hz 50 --print-every 1
 把 PICO 实时人体数据重定向到 BUMI qpos：
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot bumi --hz 50 --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot bumi --hz 50 --quiet-gmr
 ```
 
 把 PICO 实时人体数据重定向到 G1 qpos：
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot g1 --hz 50 --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot g1 --hz 50 --quiet-gmr
 ```
 
 把 PICO 实时人体数据重定向到 OpenArm v1 qpos：
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot openarm_v1 --hz 50 --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot openarm_v1 --hz 50 --quiet-gmr
 ```
 
 固定运行 10 秒做测试：
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot bumi --duration 10 --print-every 1 --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot bumi --duration 10 --print-every 1 --quiet-gmr
 ```
 
 打印完整 qpos：
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot bumi --print-qpos all --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot bumi --print-qpos all --quiet-gmr
 ```
 
 打开 MuJoCo 可视化：
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot bumi --viewer --show-human --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot bumi --viewer --show-human --quiet-gmr
 ```
 
 OpenArm v1 可视化：
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot openarm_v1 --viewer --show-human --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot openarm_v1 --viewer --show-human --quiet-gmr
 ```
 
 只看人体坐标轴，并显示所有 XRobot 关节名：
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot openarm_v1 --viewer --show-human --show-all-human --human-axes-only --show-human-name --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot openarm_v1 --viewer --show-human --show-all-human --human-axes-only --show-human-name --quiet-gmr
 ```
 
 用保存帧调 OpenArm v1 IK JSON 参数：
 
 ```bash
-python scripts/debug/tune_xrobot_ik_config.py \
+uv run python scripts/debug/tune_xrobot_ik_config.py \
   date/20260725_164701_673558_g1_frame003344.json \
   --robot openarm_v1 \
   --quiet-gmr
@@ -290,7 +299,7 @@ recordings/xrobot_frames/*.json
 把保存下来的一帧重定向到 BUMI 并打开 viewer：
 
 ```bash
-python scripts/debug/replay_xrobot_frame.py date/20260725_164701_673558_g1_frame003344.json --robot bumi --offset-to-ground --viewer --show-human --quiet-gmr
+uv run python scripts/debug/replay_xrobot_frame.py date/20260725_164701_673558_g1_frame003344.json --robot bumi --offset-to-ground --viewer --show-human --quiet-gmr
 ```
 
 ## OpenArm v1 实机接口
@@ -324,7 +333,7 @@ cmake --build build
 sudo cmake --install build
 
 cd python
-pip install .
+uv pip install .
 ```
 
 配置 CAN 口：
@@ -337,13 +346,13 @@ openarm-can-cli -i can1 can_configure
 只读检查电机状态，不会 enable 电机：
 
 ```bash
-python scripts/debug/openarm_can_probe.py --hz 10 --print-every 1
+uv run python scripts/debug/openarm_can_probe.py --hz 10 --print-every 1
 ```
 
 实时 XRobot -> GMR -> OpenArm 硬件目标 dry-run，只打印目标，不 import `openarm_can`，也不发 CAN：
 
 ```bash
-python scripts/xrobot_openarm_control.py --hz 50 --quiet-gmr --print-targets head
+uv run python scripts/xrobot_openarm_control.py --hz 50 --quiet-gmr --print-targets head
 ```
 
 带 MuJoCo viewer 的 dry-run。这个 viewer 显示的是经过 `sign / zero_offset /
@@ -351,7 +360,7 @@ hardware_lower / hardware_upper / max_velocity_rad_s` 之后的命令 qpos，不
 GMR IK qpos：
 
 ```bash
-python scripts/xrobot_openarm_control.py \
+uv run python scripts/xrobot_openarm_control.py \
   --hz 50 \
   --quiet-gmr \
   --viewer \
@@ -367,7 +376,7 @@ python scripts/xrobot_openarm_control.py \
 真正发送到实机必须显式加 `--send --enable-motors`：
 
 ```bash
-python scripts/xrobot_openarm_control.py \
+uv run python scripts/xrobot_openarm_control.py \
   --hz 50 \
   --quiet-gmr \
   --send \
@@ -395,13 +404,13 @@ models/g1/exported/
 检查 BUMI 模型是否放对：
 
 ```bash
-python scripts/debug/check_policy_model.py --robot bumi --check-fk
+uv run python scripts/debug/check_policy_model.py --robot bumi --check-fk
 ```
 
 运行实时 XRobot -> GMR -> policy 推理，但不打开 MuJoCo 窗口：
 
 ```bash
-python scripts/xrobot_policy_infer.py \
+uv run python scripts/xrobot_policy_infer.py \
   --robot bumi \
   --model-dir models/bumi/kitov_fb_bumi_action_scale_0.5 \
   --hz 50 \
@@ -412,7 +421,7 @@ python scripts/xrobot_policy_infer.py \
 运行实时 XRobot -> GMR -> policy -> MuJoCo sim2sim viewer：
 
 ```bash
-python scripts/xrobot_policy_infer.py \
+uv run python scripts/xrobot_policy_infer.py \
   --robot bumi \
   --model-dir models/bumi/kitov_fb_bumi_action_scale_0.5 \
   --hz 50 \
@@ -445,8 +454,8 @@ scripts/run_bumi_policy_sim.sh
 G1：
 
 ```bash
-python scripts/debug/check_policy_model.py --robot g1 --check-fk
-python scripts/xrobot_policy_infer.py \
+uv run python scripts/debug/check_policy_model.py --robot g1 --check-fk
+uv run python scripts/xrobot_policy_infer.py \
   --robot g1 \
   --model-dir models/g1/kitov_fb_g1 \
   --hz 50 \
@@ -514,7 +523,7 @@ G1 sim 调试时可以加 `--elastic-band`，这是 UFO-Deploy 里同类的软�
 不用 PICO/GMR 在线流，直接用训练数据里的 BFM motion 做离线 ONNX + PD replay：
 
 ```bash
-python scripts/debug/replay_bfm_policy.py \
+uv run python scripts/debug/replay_bfm_policy.py \
   --robot bumi \
   --model-dir models/bumi/kitov_fb_bumi_action_scale_0.5 \
   --data-path /home/unitree/robot_code/Kitov/Kitov/Glush_motion_data/BFM/bumi/bumi_lafan_full.pkl \
@@ -527,7 +536,7 @@ G1 不要用 motion index `0` 当稳定性测试，因为它是 fall/get-up 动�
 clip，从第一个普通 motion 开始：
 
 ```bash
-python scripts/debug/replay_bfm_policy.py \
+uv run python scripts/debug/replay_bfm_policy.py \
   --robot g1 \
   --model-dir models/g1/kitov_fb_g1 \
   --data-path /home/unitree/robot_code/Kitov/Kitov/Glush_motion_data/BFM/g1/lafan_29dof.pkl \
@@ -539,7 +548,7 @@ python scripts/debug/replay_bfm_policy.py \
 查看可用 motion：
 
 ```bash
-python scripts/debug/replay_bfm_policy.py --robot g1 --list-motions
+uv run python scripts/debug/replay_bfm_policy.py --robot g1 --list-motions
 ```
 
 这个脚本会先把 expert pkl 里的 motion 通过 `backward_encoder.onnx` 预计算成
@@ -548,7 +557,7 @@ python scripts/debug/replay_bfm_policy.py --robot g1 --list-motions
 打开 policy sim 和 reference motion 两个 viewer：
 
 ```bash
-python scripts/debug/replay_bfm_policy.py \
+uv run python scripts/debug/replay_bfm_policy.py \
   --robot bumi \
   --model-dir models/bumi/kitov_fb_bumi_action_scale_0.5 \
   --motion-index 0 \

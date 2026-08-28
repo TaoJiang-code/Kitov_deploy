@@ -106,25 +106,29 @@ OpenArm CAN SDK path:
 third_party/openarm_can
 ```
 
-## Create Conda Environment
+## Create uv Environment
 
 ```bash
-conda create -n Kitov_deploy python=3.10 -y
-conda activate Kitov_deploy
+cd /home/unitree/robot_code/Kitov/Kitov_deploy
+uv venv --python 3.10
+uv sync --inexact
 ```
 
-Install runtime dependencies:
+If `uv` is not installed yet:
 
 ```bash
-conda install -c conda-forge pybind11 libstdcxx-ng -y
-pip install numpy scipy pyzmq
-pip install mujoco mink daqp 'qpsolvers[proxqp]' loop-rate-limiters rich tqdm protobuf imageio onnxruntime
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
+
+Python dependencies are managed by `pyproject.toml`. `--inexact` preserves
+local bindings manually installed into `.venv`. `uv` only manages Python
+packages; `XRoboToolkit PC Service`, `xrobotoolkit_sdk`, and `openarm_can`
+service/C++/pybind components still need to be installed into the active `.venv`.
 
 Verify core dependencies:
 
 ```bash
-python - <<'PY'
+uv run python - <<'PY'
 import numpy, scipy, zmq
 import mujoco, mink, qpsolvers, daqp, loop_rate_limiters, rich, imageio
 import onnxruntime
@@ -134,11 +138,18 @@ PY
 
 ## XRobot Python SDK
 
-`xrobotoolkit_sdk` must be installed inside the `Kitov_deploy` conda
-environment. Verify it with:
+`xrobotoolkit_sdk` must be installed inside the current `.venv`. An SDK
+installed in the old conda environment is not visible from the uv environment.
+If the previous pybind workspace still exists, install it into `.venv` with:
 
 ```bash
-python - <<'PY'
+uv pip install /home/unitree/robot_code/Kitov/Kitov_teleop_workspace/XRoboToolkit-PC-Service-Pybind
+```
+
+Verify it with:
+
+```bash
+uv run python - <<'PY'
 import xrobotoolkit_sdk as xrt
 print("xrobotoolkit_sdk import ok")
 print("init:", hasattr(xrt, "init"))
@@ -204,8 +215,7 @@ After the PC Service is running and the PICO app is connected to the PC IP:
 
 ```bash
 cd /home/unitree/robot_code/Kitov/Kitov_deploy
-conda activate Kitov_deploy
-python scripts/debug/xrobot_probe.py --hz 50 --print-every 1
+uv run python scripts/debug/xrobot_probe.py --hz 50 --print-every 1
 ```
 
 Expected healthy output:
@@ -221,7 +231,7 @@ A/B/X/Y button values respond
 Force polling mode if callback mode is not usable:
 
 ```bash
-python scripts/debug/xrobot_probe.py --mode polling --hz 50 --print-every 1
+uv run python scripts/debug/xrobot_probe.py --mode polling --hz 50 --print-every 1
 ```
 
 ## Run Online GMR Retargeting
@@ -229,55 +239,55 @@ python scripts/debug/xrobot_probe.py --mode polling --hz 50 --print-every 1
 Retarget live PICO body data to BUMI qpos:
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot bumi --hz 50 --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot bumi --hz 50 --quiet-gmr
 ```
 
 Retarget live PICO body data to G1 qpos:
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot g1 --hz 50 --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot g1 --hz 50 --quiet-gmr
 ```
 
 Retarget live PICO body data to OpenArm v1 qpos:
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot openarm_v1 --hz 50 --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot openarm_v1 --hz 50 --quiet-gmr
 ```
 
 Run for a fixed test duration:
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot bumi --duration 10 --print-every 1 --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot bumi --duration 10 --print-every 1 --quiet-gmr
 ```
 
 Print the full qpos vector:
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot bumi --print-qpos all --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot bumi --print-qpos all --quiet-gmr
 ```
 
 Open the MuJoCo viewer:
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot bumi --viewer --show-human --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot bumi --viewer --show-human --quiet-gmr
 ```
 
 OpenArm v1 viewer:
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot openarm_v1 --viewer --show-human --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot openarm_v1 --viewer --show-human --quiet-gmr
 ```
 
 Draw only human axes and include all XRobot body joint names:
 
 ```bash
-python scripts/debug/xrobot_retarget.py --robot openarm_v1 --viewer --show-human --show-all-human --human-axes-only --show-human-name --quiet-gmr
+uv run python scripts/debug/xrobot_retarget.py --robot openarm_v1 --viewer --show-human --show-all-human --human-axes-only --show-human-name --quiet-gmr
 ```
 
 Tune the OpenArm v1 IK JSON against one saved XRobot frame:
 
 ```bash
-python scripts/debug/tune_xrobot_ik_config.py \
+uv run python scripts/debug/tune_xrobot_ik_config.py \
   date/20260725_164701_673558_g1_frame003344.json \
   --robot openarm_v1 \
   --quiet-gmr
@@ -297,7 +307,7 @@ the current retargeted qpos. Use `--save-dir` to choose a different directory.
 Replay a saved frame through BUMI retargeting:
 
 ```bash
-python scripts/debug/replay_xrobot_frame.py date/20260725_164701_673558_g1_frame003344.json --robot bumi --offset-to-ground --viewer --show-human --quiet-gmr
+uv run python scripts/debug/replay_xrobot_frame.py date/20260725_164701_673558_g1_frame003344.json --robot bumi --offset-to-ground --viewer --show-human --quiet-gmr
 ```
 
 ## OpenArm v1 Hardware Interface
@@ -336,7 +346,7 @@ cmake --build build
 sudo cmake --install build
 
 cd python
-pip install .
+uv pip install .
 ```
 
 Configure SocketCAN:
@@ -349,14 +359,14 @@ openarm-can-cli -i can1 can_configure
 Read motor state without enabling motors:
 
 ```bash
-python scripts/debug/openarm_can_probe.py --hz 10 --print-every 1
+uv run python scripts/debug/openarm_can_probe.py --hz 10 --print-every 1
 ```
 
 Live XRobot -> GMR -> OpenArm hardware target dry-run. This only prints targets;
 it does not import `openarm_can` or send CAN frames:
 
 ```bash
-python scripts/xrobot_openarm_control.py --hz 50 --quiet-gmr --print-targets head
+uv run python scripts/xrobot_openarm_control.py --hz 50 --quiet-gmr --print-targets head
 ```
 
 Dry-run with MuJoCo viewer. This viewer shows the command qpos after
@@ -364,7 +374,7 @@ Dry-run with MuJoCo viewer. This viewer shows the command qpos after
 not the raw GMR IK qpos:
 
 ```bash
-python scripts/xrobot_openarm_control.py \
+uv run python scripts/xrobot_openarm_control.py \
   --hz 50 \
   --quiet-gmr \
   --viewer \
@@ -381,7 +391,7 @@ targets that would be sent to hardware.
 Real hardware sending requires explicit `--send --enable-motors`:
 
 ```bash
-python scripts/xrobot_openarm_control.py \
+uv run python scripts/xrobot_openarm_control.py \
   --hz 50 \
   --quiet-gmr \
   --send \
@@ -411,13 +421,13 @@ models/g1/exported/
 Check a copied BUMI bundle:
 
 ```bash
-python scripts/debug/check_policy_model.py --robot bumi --check-fk
+uv run python scripts/debug/check_policy_model.py --robot bumi --check-fk
 ```
 
 Run live XRobot -> GMR -> policy inference without a MuJoCo window:
 
 ```bash
-python scripts/xrobot_policy_infer.py \
+uv run python scripts/xrobot_policy_infer.py \
   --robot bumi \
   --model-dir models/bumi/kitov_fb_bumi_action_scale_0.5 \
   --hz 50 \
@@ -428,7 +438,7 @@ python scripts/xrobot_policy_infer.py \
 Run live XRobot -> GMR -> policy -> MuJoCo sim2sim viewer:
 
 ```bash
-python scripts/xrobot_policy_infer.py \
+uv run python scripts/xrobot_policy_infer.py \
   --robot bumi \
   --model-dir models/bumi/kitov_fb_bumi_action_scale_0.5 \
   --hz 50 \
@@ -459,8 +469,8 @@ scripts/run_bumi_policy_sim.sh
 For G1:
 
 ```bash
-python scripts/debug/check_policy_model.py --robot g1 --check-fk
-python scripts/xrobot_policy_infer.py \
+uv run python scripts/debug/check_policy_model.py --robot g1 --check-fk
+uv run python scripts/xrobot_policy_infer.py \
   --robot g1 \
   --model-dir models/g1/kitov_fb_g1 \
   --hz 50 \
@@ -508,7 +518,7 @@ Replay a BFM motion from the training dataset through the deploy-side ONNX + PD
 diagnostic path, without PICO/GMR online streaming:
 
 ```bash
-python scripts/debug/replay_bfm_policy.py \
+uv run python scripts/debug/replay_bfm_policy.py \
   --robot bumi \
   --model-dir models/bumi/kitov_fb_bumi_action_scale_0.5 \
   --data-path /home/unitree/robot_code/Kitov/Kitov/Glush_motion_data/BFM/bumi/bumi_lafan_full.pkl \
@@ -522,7 +532,7 @@ script skips obvious fall/get-up/lie clips and starts from the first ordinary
 motion:
 
 ```bash
-python scripts/debug/replay_bfm_policy.py \
+uv run python scripts/debug/replay_bfm_policy.py \
   --robot g1 \
   --model-dir models/g1/kitov_fb_g1 \
   --data-path /home/unitree/robot_code/Kitov/Kitov/Glush_motion_data/BFM/g1/lafan_29dof.pkl \
@@ -534,7 +544,7 @@ python scripts/debug/replay_bfm_policy.py \
 List available motion keys:
 
 ```bash
-python scripts/debug/replay_bfm_policy.py --robot g1 --list-motions
+uv run python scripts/debug/replay_bfm_policy.py --robot g1 --list-motions
 ```
 
 This script first converts the expert pkl motion into `z_seq` through

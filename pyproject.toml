@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kitov-deploy"
+version = "0.1.0"
+description = "Kitov deployment runtime for XRobot retargeting, MuJoCo sim2sim, and OpenArm hardware bridge."
+readme = "README.md"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+  "daqp",
+  "imageio",
+  "loop-rate-limiters",
+  "mink",
+  "mujoco",
+  "numpy",
+  "onnxruntime",
+  "protobuf",
+  "pybind11",
+  "pyzmq",
+  "qpsolvers[proxqp]",
+  "rich",
+  "scipy",
+  "tqdm",
+]
+
+[tool.setuptools.packages.find]
+include = ["kitov_deploy*"]
+
