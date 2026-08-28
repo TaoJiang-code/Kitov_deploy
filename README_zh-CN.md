@@ -352,7 +352,27 @@ configs/hardware/openarm_v1.json
 
 里面定义了每个 MuJoCo 关节对应的 CAN 口、电机类型、发送 ID、接收 ID、方向 `sign`、零点 `zero_offset`、`kp/kd` 和最大速度。当前默认是假设右臂在 `can0`、左臂在 `can1`，每条 CAN 总线上的电机 ID 是 `0x01..0x07`，接收 ID 是 `0x11..0x17`。这个默认只能作为起点，实机前必须按真实硬件校准。
 
-安装 OpenArm CAN 库可以参考子模块：
+安装 OpenArm CAN 库前先装系统依赖。你遇到的 `Could not find CLI11`
+就是这里缺 `libcli11-dev`：
+
+```bash
+sudo apt update
+sudo apt install -y cmake build-essential libcli11-dev can-utils
+```
+
+如果当前 Ubuntu 源里没有 `libcli11-dev`，先源码安装 CLI11：
+
+```bash
+mkdir -p workspace/deps
+git clone https://github.com/CLIUtils/CLI11.git workspace/deps/CLI11
+cmake -S workspace/deps/CLI11 -B workspace/deps/CLI11/build \
+  -DCLI11_BUILD_DOCS=OFF \
+  -DCLI11_BUILD_EXAMPLES=OFF \
+  -DCLI11_BUILD_TESTS=OFF
+sudo cmake --install workspace/deps/CLI11/build
+```
+
+然后编译并安装 OpenArm CAN 子模块：
 
 ```bash
 cd third_party/openarm_can

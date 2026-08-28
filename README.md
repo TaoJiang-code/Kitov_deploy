@@ -365,7 +365,28 @@ current default assumes right arm on `can0`, left arm on `can1`, motor IDs
 `0x01..0x07`, and receive IDs `0x11..0x17` on each bus. Treat this only as a
 starting point; real hardware needs per-joint direction and zero calibration.
 
-Install OpenArm CAN from the submodule:
+Install system dependencies before building OpenArm CAN. The CMake error
+`Could not find CLI11` means `libcli11-dev` is missing:
+
+```bash
+sudo apt update
+sudo apt install -y cmake build-essential libcli11-dev can-utils
+```
+
+If `libcli11-dev` is not available from the current Ubuntu package source,
+install CLI11 from source first:
+
+```bash
+mkdir -p workspace/deps
+git clone https://github.com/CLIUtils/CLI11.git workspace/deps/CLI11
+cmake -S workspace/deps/CLI11 -B workspace/deps/CLI11/build \
+  -DCLI11_BUILD_DOCS=OFF \
+  -DCLI11_BUILD_EXAMPLES=OFF \
+  -DCLI11_BUILD_TESTS=OFF
+sudo cmake --install workspace/deps/CLI11/build
+```
+
+Then build and install the OpenArm CAN submodule:
 
 ```bash
 cd third_party/openarm_can
