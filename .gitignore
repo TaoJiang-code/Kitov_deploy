@@ -36,6 +36,7 @@ tmp/
 build/
 dist/
 *.egg-info/
+workspace/xrobot_toolkit/
 
 # Model artifacts copied in manually
 models/**/*.onnx

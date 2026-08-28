@@ -105,7 +105,6 @@ third_party/openarm_can
 ## 创建 uv 环境
 
 ```bash
-cd /home/unitree/robot_code/Kitov/Kitov_deploy
 uv venv --python 3.10
 uv sync --inexact
 ```
@@ -135,10 +134,41 @@ PY
 ## XRobot Python SDK
 
 `xrobotoolkit_sdk` 必须安装在当前 `.venv` 里。之前装在 conda 环境里的 SDK 不会自动进入
-uv 环境。如果还保留了之前的 pybind 工作区，可以直接装到当前 `.venv`：
+uv 环境。
+
+新设备上先在仓库主目录的 `workspace/xrobot_toolkit/` 里准备两个仓库。这个目录已加入
+`.gitignore`，不会提交到仓库。下面每个代码块都默认从 Kitov_deploy 仓库主目录执行：
 
 ```bash
-uv pip install /home/unitree/robot_code/Kitov/Kitov_teleop_workspace/XRoboToolkit-PC-Service-Pybind
+mkdir -p workspace/xrobot_toolkit
+cd workspace/xrobot_toolkit
+
+git clone https://github.com/Axellwppr/XRoboToolkit-PC-Service-Pybind
+git clone https://github.com/XR-Robotics/XRoboToolkit-PC-Service.git
+```
+
+编译 XRoboToolkit C++ SDK：
+
+```bash
+cd workspace/xrobot_toolkit/XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK
+bash build.sh
+```
+
+把 C++ SDK 产物放进 Python binding 项目：
+
+```bash
+cd workspace/xrobot_toolkit/XRoboToolkit-PC-Service-Pybind
+mkdir -p lib include
+
+cp ../XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK/PXREARobotSDK.h include/
+cp -r ../XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK/nlohmann include/nlohmann/
+cp ../XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK/build/libPXREARobotSDK.so lib/
+```
+
+安装到 Kitov_deploy 的 uv 环境：
+
+```bash
+uv pip install workspace/xrobot_toolkit/XRoboToolkit-PC-Service-Pybind
 ```
 
 验证方式：
@@ -166,7 +196,6 @@ packages/xrobotoolkit_pc_service/
 根据系统版本安装对应包。本机是 `Ubuntu 20.04.6`，使用：
 
 ```bash
-cd /home/unitree/robot_code/Kitov/Kitov_deploy
 sudo dpkg -i packages/xrobotoolkit_pc_service/XRoboToolkit_PC_Service_1.0.0_ubuntu_20.04_amd64.deb
 ```
 
@@ -207,7 +236,6 @@ pkill -f RoboticsServiceProcess
 确认 PC Service 正在运行，并且 PICO 端 app 已连接电脑 IP 后：
 
 ```bash
-cd /home/unitree/robot_code/Kitov/Kitov_deploy
 uv run python scripts/debug/xrobot_probe.py --hz 50 --print-every 1
 ```
 
@@ -327,7 +355,7 @@ configs/hardware/openarm_v1.json
 安装 OpenArm CAN 库可以参考子模块：
 
 ```bash
-cd /home/unitree/robot_code/Kitov/Kitov_deploy/third_party/openarm_can
+cd third_party/openarm_can
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 sudo cmake --install build

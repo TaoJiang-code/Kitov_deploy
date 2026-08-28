@@ -109,7 +109,6 @@ third_party/openarm_can
 ## Create uv Environment
 
 ```bash
-cd /home/unitree/robot_code/Kitov/Kitov_deploy
 uv venv --python 3.10
 uv sync --inexact
 ```
@@ -140,10 +139,41 @@ PY
 
 `xrobotoolkit_sdk` must be installed inside the current `.venv`. An SDK
 installed in the old conda environment is not visible from the uv environment.
-If the previous pybind workspace still exists, install it into `.venv` with:
+
+On a new machine, prepare both repositories inside
+`workspace/xrobot_toolkit/` under the repository root. This directory is ignored
+by Git. Run each block below from the Kitov_deploy repository root:
 
 ```bash
-uv pip install /home/unitree/robot_code/Kitov/Kitov_teleop_workspace/XRoboToolkit-PC-Service-Pybind
+mkdir -p workspace/xrobot_toolkit
+cd workspace/xrobot_toolkit
+
+git clone https://github.com/Axellwppr/XRoboToolkit-PC-Service-Pybind
+git clone https://github.com/XR-Robotics/XRoboToolkit-PC-Service.git
+```
+
+Build the XRoboToolkit C++ SDK:
+
+```bash
+cd workspace/xrobot_toolkit/XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK
+bash build.sh
+```
+
+Copy the C++ SDK artifacts into the Python binding project:
+
+```bash
+cd workspace/xrobot_toolkit/XRoboToolkit-PC-Service-Pybind
+mkdir -p lib include
+
+cp ../XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK/PXREARobotSDK.h include/
+cp -r ../XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK/nlohmann include/nlohmann/
+cp ../XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK/build/libPXREARobotSDK.so lib/
+```
+
+Install the binding into the Kitov_deploy uv environment:
+
+```bash
+uv pip install workspace/xrobot_toolkit/XRoboToolkit-PC-Service-Pybind
 ```
 
 Verify it with:
@@ -172,7 +202,6 @@ Install the package that matches the host Ubuntu version. On this machine
 (`Ubuntu 20.04.6`), use:
 
 ```bash
-cd /home/unitree/robot_code/Kitov/Kitov_deploy
 sudo dpkg -i packages/xrobotoolkit_pc_service/XRoboToolkit_PC_Service_1.0.0_ubuntu_20.04_amd64.deb
 ```
 
@@ -214,7 +243,6 @@ pkill -f RoboticsServiceProcess
 After the PC Service is running and the PICO app is connected to the PC IP:
 
 ```bash
-cd /home/unitree/robot_code/Kitov/Kitov_deploy
 uv run python scripts/debug/xrobot_probe.py --hz 50 --print-every 1
 ```
 
@@ -340,7 +368,7 @@ starting point; real hardware needs per-joint direction and zero calibration.
 Install OpenArm CAN from the submodule:
 
 ```bash
-cd /home/unitree/robot_code/Kitov/Kitov_deploy/third_party/openarm_can
+cd third_party/openarm_can
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 sudo cmake --install build
