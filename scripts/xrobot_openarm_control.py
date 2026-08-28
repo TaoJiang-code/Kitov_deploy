@@ -39,6 +39,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--hz", type=float, default=50.0, help="Retarget/control rate.")
     parser.add_argument("--duration", type=float, default=0.0, help="Exit after N seconds. 0 means run until Ctrl-C.")
     parser.add_argument("--print-every", type=float, default=1.0, help="Status print interval in seconds.")
+    parser.add_argument(
+        "--startup-timeout",
+        type=float,
+        default=10.0,
+        help="Seconds to wait for the first XRobot body frame before enabling motors. 0 means wait forever.",
+    )
     parser.add_argument("--actual-human-height", type=float, default=None)
     parser.add_argument("--solver", default="daqp")
     parser.add_argument("--damping", type=float, default=5e-1)
@@ -93,6 +99,7 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _request_stop)
 
     bridge = None
+    motors_enabled = False
     if args.send:
         bridge = OpenArmCANBridge(hardware_config)
         print("[xrobot_openarm_control] connecting to OpenArm CAN")
@@ -105,8 +112,7 @@ def main() -> int:
                 "Cannot read initial motor state. Refusing to send because rate limiting "
                 f"needs the real starting joint positions: {exc}"
             ) from exc
-        bridge.enable_all()
-        print("[xrobot_openarm_control] motors enabled")
+        print("[xrobot_openarm_control] waiting for first XRobot body frame before enabling motors")
     else:
         neutral_qpos = np.zeros(mapper.model.nq, dtype=np.float64)
         limiter.reset(mapper.hardware_targets_from_qpos(neutral_qpos))
@@ -131,8 +137,9 @@ def main() -> int:
     period_s = 1.0 / max(float(args.hz), 1e-6)
     print_interval = max(float(args.print_every), 0.05)
     watchdog_timeout_s = max(float(hardware_config.safety.watchdog_timeout_s), 0.0)
-    last_body_time = time.monotonic()
-    start_time = last_body_time
+    startup_timeout_s = max(float(args.startup_timeout), 0.0)
+    start_time = time.monotonic()
+    last_body_time: float | None = None
     last_print = 0.0
     last_loop = start_time
     frames = 0
@@ -155,13 +162,30 @@ def main() -> int:
             frame = streamer.read_body_frame()
             if frame is None:
                 missing += 1
+                if frames == 0:
+                    if startup_timeout_s > 0.0 and now - start_time > startup_timeout_s:
+                        print(
+                            "[xrobot_openarm_control] no XRobot body frame before startup timeout; "
+                            "motors were not enabled"
+                        )
+                        break
+                    if now - last_print >= print_interval:
+                        print(
+                            "[xrobot_openarm_control] "
+                            f"waiting for first XRobot body frame t={now - start_time:.1f}s missing={missing}"
+                        )
+                        last_print = now
+                    time.sleep(period_s)
+                    continue
+                assert last_body_time is not None
                 if args.send and watchdog_timeout_s > 0.0 and now - last_body_time > watchdog_timeout_s:
                     print(
                         "[xrobot_openarm_control] XRobot body frame watchdog timeout; "
                         "disabling motors and stopping"
                     )
                     assert bridge is not None
-                    bridge.disable_all()
+                    if motors_enabled:
+                        bridge.disable_all()
                     break
                 time.sleep(period_s)
                 continue
@@ -176,6 +200,10 @@ def main() -> int:
 
             if args.send:
                 assert bridge is not None
+                if not motors_enabled:
+                    bridge.enable_all()
+                    motors_enabled = True
+                    print("[xrobot_openarm_control] motors enabled after first XRobot body frame")
                 bridge.send_position_targets(targets, kp_scale=args.kp_scale, kd_scale=args.kd_scale)
                 sent += 1
 
@@ -214,7 +242,7 @@ def main() -> int:
         if viewer is not None:
             viewer.close()
         streamer.close()
-        if bridge is not None and args.disable_on_exit:
+        if bridge is not None and args.disable_on_exit and motors_enabled:
             bridge.disable_all()
         print(f"[xrobot_openarm_control] stopped frames={frames} sent={sent}")
 

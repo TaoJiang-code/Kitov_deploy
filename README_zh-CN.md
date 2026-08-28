@@ -364,7 +364,10 @@ sudo apt install -y cmake build-essential libcli11-dev can-utils
 
 ```bash
 mkdir -p workspace/deps
-git clone https://github.com/CLIUtils/CLI11.git workspace/deps/CLI11
+wget -O workspace/deps/CLI11.zip https://github.com/CLIUtils/CLI11/archive/refs/heads/main.zip
+unzip -q workspace/deps/CLI11.zip -d workspace/deps
+mv workspace/deps/CLI11-main workspace/deps/CLI11
+
 cmake -S workspace/deps/CLI11 -B workspace/deps/CLI11/build \
   -DCLI11_BUILD_DOCS=OFF \
   -DCLI11_BUILD_EXAMPLES=OFF \
@@ -431,7 +434,10 @@ uv run python scripts/xrobot_openarm_control.py \
   --enable-motors
 ```
 
-退出时默认会 `disable_all`。如果 PICO/XRobot 数据超过 `configs/hardware/openarm_v1.json` 里的 `watchdog_timeout_s` 没有更新，也会 disable 并停止。
+脚本会先连接 CAN 并读取当前电机位置，但会等到第一帧 XRobot 人体数据到达后才
+`enable_all`。启动阶段默认最多等 `--startup-timeout 10` 秒；运行过程中如果
+PICO/XRobot 数据超过 `configs/hardware/openarm_v1.json` 里的 `watchdog_timeout_s`
+没有更新，会 disable 并停止。退出时默认也会 `disable_all`。
 
 ## 模型推理
 

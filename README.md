@@ -378,7 +378,10 @@ install CLI11 from source first:
 
 ```bash
 mkdir -p workspace/deps
-git clone https://github.com/CLIUtils/CLI11.git workspace/deps/CLI11
+wget -O workspace/deps/CLI11.zip https://github.com/CLIUtils/CLI11/archive/refs/heads/main.zip
+unzip -q workspace/deps/CLI11.zip -d workspace/deps
+mv workspace/deps/CLI11-main workspace/deps/CLI11
+
 cmake -S workspace/deps/CLI11 -B workspace/deps/CLI11/build \
   -DCLI11_BUILD_DOCS=OFF \
   -DCLI11_BUILD_EXAMPLES=OFF \
@@ -447,8 +450,11 @@ uv run python scripts/xrobot_openarm_control.py \
   --enable-motors
 ```
 
-On exit, the script disables motors by default. If PICO/XRobot frames stop
-updating longer than `watchdog_timeout_s`, it also disables motors and exits.
+The script connects to CAN and reads current motor positions first, but it only
+calls `enable_all` after the first XRobot body frame arrives. Startup waits up
+to `--startup-timeout 10` seconds by default. During runtime, if PICO/XRobot
+frames stop updating longer than `watchdog_timeout_s`, the script disables
+motors and exits. On exit, it disables motors by default.
 
 ## Model Inference
 

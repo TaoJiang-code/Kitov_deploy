@@ -49,7 +49,7 @@ def _load_xrobot_sdk() -> Any:
         import xrobotoolkit_sdk as xrt
     except ImportError as exc:
         raise RuntimeError(
-            "Cannot import xrobotoolkit_sdk. Activate the Kitov_deploy conda "
+            "Cannot import xrobotoolkit_sdk. Activate the Kitov_deploy uv "
             "environment and install the XRoboToolkit Python binding first."
         ) from exc
     if not hasattr(xrt, "init"):
