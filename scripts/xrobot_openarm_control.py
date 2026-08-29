@@ -66,6 +66,12 @@ def _parse_args() -> argparse.Namespace:
         default=float(2.0 * np.pi),
         help="Reject startup hold targets whose absolute motor position exceeds this value. 0 disables the check.",
     )
+    parser.add_argument(
+        "--startup-limit-margin",
+        type=float,
+        default=0.05,
+        help="Startup range tolerance in radians before clamping tiny out-of-range motor readings.",
+    )
     parser.add_argument("--kp-scale", type=float, default=1.0)
     parser.add_argument("--kd-scale", type=float, default=1.0)
     parser.add_argument("--print-targets", choices=["none", "head", "all"], default="head")
@@ -100,12 +106,78 @@ def _state_targets(states: dict[str, Any]) -> dict[str, float]:
     return {name: float(state.position) for name, state in states.items()}
 
 
+def _normalize_target_to_limits(
+    value: float,
+    lower: float | None,
+    upper: float | None,
+    *,
+    margin_rad: float,
+) -> tuple[float, str | None]:
+    if lower is None and upper is None:
+        return value, None
+
+    margin = max(float(margin_rad), 0.0)
+    candidates = [float(value)]
+    two_pi = float(2.0 * np.pi)
+    candidates.extend(float(value) + two_pi * k for k in range(-4, 5) if k != 0)
+
+    def _within(candidate: float) -> bool:
+        if lower is not None and candidate < lower - margin:
+            return False
+        if upper is not None and candidate > upper + margin:
+            return False
+        return True
+
+    valid_candidates = [candidate for candidate in candidates if _within(candidate)]
+    if not valid_candidates:
+        return value, None
+
+    if lower is not None and upper is not None:
+        center = 0.5 * (lower + upper)
+        normalized = min(valid_candidates, key=lambda candidate: abs(candidate - center))
+    else:
+        normalized = min(valid_candidates, key=abs)
+
+    clipped = normalized
+    if lower is not None:
+        clipped = max(clipped, lower)
+    if upper is not None:
+        clipped = min(clipped, upper)
+
+    if abs(clipped - value) > 1e-9:
+        return float(clipped), f"{value:.4f}->{clipped:.4f}"
+    return float(clipped), None
+
+
+def _normalize_hold_targets(
+    targets: dict[str, float],
+    hardware_limits: dict[str, tuple[float | None, float | None]],
+    *,
+    margin_rad: float,
+) -> tuple[dict[str, float], list[str]]:
+    normalized = dict(targets)
+    changes: list[str] = []
+    for name, value in sorted(targets.items()):
+        lower, upper = hardware_limits.get(name, (None, None))
+        new_value, change = _normalize_target_to_limits(
+            float(value),
+            lower,
+            upper,
+            margin_rad=margin_rad,
+        )
+        normalized[name] = new_value
+        if change is not None:
+            changes.append(f"{name}:{change}")
+    return normalized, changes
+
+
 def _validate_hold_targets(
     targets: dict[str, float],
     expected_names: set[str],
     *,
     hardware_limits: dict[str, tuple[float | None, float | None]],
     abs_limit_rad: float,
+    margin_rad: float,
 ) -> tuple[bool, str]:
     missing = sorted(expected_names.difference(targets))
     if missing:
@@ -115,9 +187,9 @@ def _validate_hold_targets(
         if not np.isfinite(value):
             return False, f"{name} is not finite: {value}"
         lower, upper = hardware_limits.get(name, (None, None))
-        if lower is not None and value < lower:
+        if lower is not None and value < lower - margin_rad:
             return False, f"{name}={value:.4f} below hardware lower {lower:.4f}"
-        if upper is not None and value > upper:
+        if upper is not None and value > upper + margin_rad:
             return False, f"{name}={value:.4f} above hardware upper {upper:.4f}"
         if abs_limit_rad > 0.0 and abs(value) > abs_limit_rad:
             return False, f"{name}={value:.4f} exceeds startup limit {abs_limit_rad:.4f}"
@@ -131,6 +203,8 @@ def _read_startup_hold_targets(
     hardware_limits: dict[str, tuple[float | None, float | None]],
     warmup_s: float,
     abs_limit_rad: float,
+    margin_rad: float,
+    sample_period_s: float,
     print_interval_s: float,
     should_stop: Callable[[], bool],
 ) -> dict[str, float] | None:
@@ -144,14 +218,21 @@ def _read_startup_hold_targets(
         attempts += 1
         states = bridge.read_state(recv_timeout_us=hardware_config.safety.enable_recv_timeout_us)
         targets = _state_targets(states)
+        targets, changes = _normalize_hold_targets(targets, hardware_limits, margin_rad=margin_rad)
         ok, reason = _validate_hold_targets(
             targets,
             expected_names,
             hardware_limits=hardware_limits,
             abs_limit_rad=abs_limit_rad,
+            margin_rad=margin_rad,
         )
         elapsed = time.monotonic() - start
         if ok and elapsed >= warmup_s:
+            if changes:
+                print(
+                    "[xrobot_openarm_control] normalized startup motor state "
+                    f"{', '.join(changes[:8])}"
+                )
             return targets
 
         last_reason = "warming up" if ok else reason
@@ -163,6 +244,7 @@ def _read_startup_hold_targets(
                 f"reason={last_reason}"
             )
             last_print = now
+        time.sleep(max(float(sample_period_s), 1e-6))
     return None
 
 
@@ -208,6 +290,8 @@ def main() -> int:
                 hardware_limits=hardware_limits,
                 warmup_s=max(float(args.startup_hold_warmup), 0.0),
                 abs_limit_rad=max(float(args.startup_position_abs_limit), 0.0),
+                margin_rad=max(float(args.startup_limit_margin), 0.0),
+                sample_period_s=period_s,
                 print_interval_s=print_interval,
                 should_stop=lambda: stop,
             )
@@ -228,6 +312,7 @@ def main() -> int:
         print(
             "[xrobot_openarm_control] initialized hold target from validated motor state; "
             "holding current posture until first XRobot body frame"
+            f"{_format_targets(initial_targets, args.print_targets)}"
         )
     else:
         neutral_qpos = np.zeros(mapper.model.nq, dtype=np.float64)

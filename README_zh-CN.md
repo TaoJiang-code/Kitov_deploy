@@ -436,10 +436,11 @@ uv run python scripts/xrobot_openarm_control.py \
 
 脚本会先连接 CAN，然后立刻 `enable_all`。之后会等待一小段时间读取稳定的当前电机
 位置，只有启动保持目标通过 `hardware_lower/hardware_upper` 或 XML joint range 检查后
-才会发送 MIT hold target；默认还会拒绝绝对值超过 `--startup-position-abs-limit 6.283`
-的启动读数，避免把 `-12.4rad` 这类异常边界值当成当前姿势发出去。第一帧 XRobot 人体
-数据到来前，会持续发送当前电机位置作为保持目标；运行中如果突然没有新的人体数据，也会
-持续发送上一帧目标，让机械臂保持当前姿势。退出时默认会 `disable_all`。
+才会发送 MIT hold target。启动读数会先尝试按 `2*pi` 周期折回到有效范围内，例如把
+接近编码边界的 `-12.4rad` 折回到当前关节允许范围；如果仍然不在范围内才会拒绝。
+默认还会拒绝绝对值超过 `--startup-position-abs-limit 6.283` 的折回后读数。第一帧
+XRobot 人体数据到来前，会持续发送当前电机位置作为保持目标；运行中如果突然没有新的人体
+数据，也会持续发送上一帧目标，让机械臂保持当前姿势。退出时默认会 `disable_all`。
 
 ## 模型推理
 

@@ -458,13 +458,14 @@ uv run python scripts/xrobot_openarm_control.py \
 The script connects to CAN and then calls `enable_all` immediately. It then waits
 briefly for stable current motor positions and only sends the MIT hold target
 after the startup hold target passes `hardware_lower/hardware_upper` or XML joint
-range validation. By default, startup readings whose absolute value exceeds
-`--startup-position-abs-limit 6.283` are also rejected so boundary-like values
-such as `-12.4rad` are not sent as the current posture. Before the first XRobot
-body frame arrives, it keeps sending the current motor positions as the hold
-target. During runtime, if PICO/XRobot frames stop updating, the script keeps
-sending the last target so the arm holds the current posture. On exit, it
-disables motors by default.
+range validation. Startup readings are first folded by `2*pi` into the valid
+range, so boundary-like values such as `-12.4rad` can map back into the current
+joint range. If the folded value is still invalid, it is rejected. By default,
+folded startup readings whose absolute value exceeds `--startup-position-abs-limit
+6.283` are also rejected. Before the first XRobot body frame arrives, it keeps
+sending the current motor positions as the hold target. During runtime, if
+PICO/XRobot frames stop updating, the script keeps sending the last target so
+the arm holds the current posture. On exit, it disables motors by default.
 
 ## Model Inference
 
