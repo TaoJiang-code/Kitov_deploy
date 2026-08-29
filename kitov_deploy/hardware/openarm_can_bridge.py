@@ -204,6 +204,24 @@ class OpenArmQposMapper:
             values[joint_name] = sim_q
         return values
 
+    def sim_joint_limits(self) -> dict[str, tuple[float | None, float | None]]:
+        return {motor.joint_name: self._joint_ranges.get(motor.joint_name, (None, None)) for motor in self.config.motors}
+
+    def qpos_from_sim_joint_positions(self, reference_qpos: np.ndarray, positions: dict[str, float]) -> np.ndarray:
+        qpos = np.asarray(reference_qpos, dtype=np.float64).reshape(-1).copy()
+        if qpos.shape[0] != self.model.nq:
+            raise ValueError(f"OpenArm qpos size mismatch: got {qpos.shape[0]}, expected {self.model.nq}")
+
+        for joint_name, sim_q_raw in positions.items():
+            if joint_name not in self._joint_qpos_addr:
+                continue
+            sim_q = float(sim_q_raw)
+            if joint_name in self._joint_ranges:
+                lower, upper = self._joint_ranges[joint_name]
+                sim_q = float(np.clip(sim_q, lower, upper))
+            qpos[self._joint_qpos_addr[joint_name]] = sim_q
+        return qpos
+
     def hardware_targets_from_qpos(self, qpos: np.ndarray) -> dict[str, float]:
         sim_q_by_joint = self.sim_joint_positions(qpos)
         targets = {}

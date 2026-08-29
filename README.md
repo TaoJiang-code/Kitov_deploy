@@ -475,18 +475,25 @@ uv run python scripts/debug/openarm_hardware_tuner.py --hz 50
 ```
 
 This panel does not use XRobot/GMR. It only tests
-`configs/hardware/openarm_v1.json -> openarm_can`. By default it opens a MuJoCo
-viewer driven by real motor feedback, so you can check whether the real arm and
-MuJoCo move in the same direction. Each joint row shows current motor feedback,
-feedback converted back into MuJoCo coordinates, the target slider, the last sent
-target, error, and enabled state. `Enable All` only enables motors,
-`Hold Current` copies feedback into the target sliders, `Send Once` sends one
-`max_velocity_rad_s` limited target step, and `Auto Send` continuously sends
-slider targets. `Flip Sign` flips that joint's `sign` and writes it back to JSON;
-it changes the feedback-to-MuJoCo direction mapping without changing the current
-panel slider hardware range. `Set Motor Zero All` calls the motor hardware zero
-command; `Save JSON Zero Offset` only writes current feedback into this
+`configs/hardware/openarm_v1.json -> openarm_can`. The default is
+`--slider-space sim`: sliders are MuJoCo joint angles,
+then targets are converted through `sign/zero_offset` before being sent to
+hardware. This matches the realtime control mapping path and is the right mode
+for checking whether MuJoCo commands and the real arm move in the same direction.
+Each joint row shows current motor feedback, feedback converted back into MuJoCo
+coordinates, the target slider, the last sent target, error, and enabled state.
+`Enable All` only enables motors, `Hold Current` copies feedback into the target
+sliders, `Send Once` sends one `max_velocity_rad_s` limited target step, and
+`Auto Send` continuously sends slider targets. `Flip Sign` flips that joint's
+`sign` and writes it back to JSON. `Set Motor Zero All` calls the motor hardware
+zero command; `Save JSON Zero Offset` only writes current feedback into this
 repository's `zero_offset` fields and does not change motor-side zero.
+
+For low-level raw motor-angle tests:
+
+```bash
+uv run python scripts/debug/openarm_hardware_tuner.py --hz 50 --slider-space hardware
+```
 
 ## Model Inference
 

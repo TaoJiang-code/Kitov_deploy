@@ -45,7 +45,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--hz", type=float, default=50.0, help="Read/send refresh rate.")
     parser.add_argument("--kp-scale", type=float, default=1.0)
     parser.add_argument("--kd-scale", type=float, default=1.0)
-    parser.add_argument("--viewer", action=argparse.BooleanOptionalAction, default=True, help="Open MuJoCo viewer driven by real motor feedback.")
+    parser.add_argument(
+        "--slider-space",
+        choices=["sim", "hardware"],
+        default="sim",
+        help="Interpret sliders as MuJoCo joint angles or raw hardware motor angles.",
+    )
+    parser.add_argument("--viewer", action=argparse.BooleanOptionalAction, default=True, help="Open MuJoCo viewer.")
     parser.add_argument("--disable-on-exit", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
 
@@ -112,6 +118,7 @@ class OpenArmHardwareTuner:
         hz: float,
         kp_scale: float,
         kd_scale: float,
+        slider_space: str,
         viewer: Any | None,
         disable_on_exit: bool,
     ) -> None:
@@ -124,11 +131,13 @@ class OpenArmHardwareTuner:
         self.period_ms = max(int(round(1000.0 / max(float(hz), 1e-6))), 1)
         self.kp_scale = float(kp_scale)
         self.kd_scale = float(kd_scale)
+        self.slider_space = str(slider_space)
         self.viewer = viewer
         self.disable_on_exit = bool(disable_on_exit)
         self.limiter = OpenArmCommandLimiter(hardware_config)
-        self.limits = mapper.hardware_limits()
-        self.slider_limits = dict(self.limits)
+        self.hardware_limits = mapper.hardware_limits()
+        self.sim_limits = mapper.sim_joint_limits()
+        self.slider_limits = dict(self.sim_limits if self.slider_space == "sim" else self.hardware_limits)
         self.motor_by_joint = {motor.joint_name: motor for motor in hardware_config.motors}
 
         self.motors_enabled = False
@@ -189,7 +198,7 @@ class OpenArmHardwareTuner:
             "Actual hw",
             "Actual sim",
             "Sign",
-            "Target hw",
+            "Target sim" if self.slider_space == "sim" else "Target hw",
             "Slider",
             "Sent hw",
             "Error",
@@ -200,7 +209,7 @@ class OpenArmHardwareTuner:
             ttk.Label(table, text=heading).grid(row=0, column=col, sticky="w", padx=4, pady=(0, 8))
 
         for row, motor in enumerate(self.config.motors, start=1):
-            lower, upper = self.limits.get(motor.joint_name, (None, None))
+            lower, upper = self.slider_limits.get(motor.joint_name, (None, None))
             target_var = tk.DoubleVar(value=_midpoint(lower, upper))
             self.target_vars[motor.joint_name] = target_var
             self.current_vars[motor.joint_name] = tk.StringVar(value="--")
@@ -252,9 +261,10 @@ class OpenArmHardwareTuner:
         self.config = load_openarm_hardware_config(self.hardware_config_path)
         self.mapper = OpenArmQposMapper(self.config)
         self.limiter = OpenArmCommandLimiter(self.config)
-        self.limits = self.mapper.hardware_limits()
+        self.hardware_limits = self.mapper.hardware_limits()
+        self.sim_limits = self.mapper.sim_joint_limits()
         self.motor_by_joint = {motor.joint_name: motor for motor in self.config.motors}
-        current_targets = self._target_values()
+        current_targets = self._hardware_targets_from_slider_values()
         self.limiter.reset(current_targets)
         self.last_sent_targets = dict(current_targets)
         for motor in self.config.motors:
@@ -276,14 +286,15 @@ class OpenArmHardwareTuner:
             lower, upper = self.slider_limits.get(motor.joint_name, (None, None))
             value = _midpoint(lower, upper)
             if motor.joint_name in states:
-                value = float(states[motor.joint_name].position)
+                hardware_q = float(states[motor.joint_name].position)
+                value = motor.hardware_to_sim(hardware_q) if self.slider_space == "sim" else hardware_q
             value = _clamp(value, lower, upper)
             self.target_vars[motor.joint_name].set(value)
-            targets[motor.joint_name] = value
+        targets = self._hardware_targets_from_slider_values()
         self.limiter.reset(targets)
         self.last_sent_targets = dict(targets)
         self._update_state_labels(states)
-        self.status_var.set("connected; sliders initialized from current feedback")
+        self.status_var.set(f"connected; {self.slider_space} sliders initialized from current feedback")
 
     def _target_values(self) -> dict[str, float]:
         targets = {}
@@ -292,11 +303,30 @@ class OpenArmHardwareTuner:
             targets[motor.joint_name] = _clamp(float(self.target_vars[motor.joint_name].get()), lower, upper)
         return targets
 
+    def _hardware_targets_from_slider_values(self) -> dict[str, float]:
+        values = self._target_values()
+        if self.slider_space == "hardware":
+            targets = dict(values)
+        else:
+            qpos = self.mapper.qpos_from_sim_joint_positions(np.zeros(self.mapper.model.nq, dtype=np.float64), values)
+            targets = self.mapper.hardware_targets_from_qpos(qpos)
+        clipped = {}
+        for motor in self.config.motors:
+            lower, upper = self.hardware_limits.get(motor.joint_name, (None, None))
+            clipped[motor.joint_name] = _clamp(targets[motor.joint_name], lower, upper)
+        return clipped
+
+    def _qpos_from_slider_values(self) -> np.ndarray:
+        values = self._target_values()
+        if self.slider_space == "sim":
+            return self.mapper.qpos_from_sim_joint_positions(np.zeros(self.mapper.model.nq, dtype=np.float64), values)
+        return self.mapper.qpos_from_hardware_targets(np.zeros(self.mapper.model.nq, dtype=np.float64), values)
+
     def _limited_targets(self) -> dict[str, float]:
         now = time.monotonic()
         dt = max(now - self.last_update_time, self.period_ms / 1000.0)
         self.last_update_time = now
-        return self.limiter.limit(self._target_values(), dt)
+        return self.limiter.limit(self._hardware_targets_from_slider_values(), dt)
 
     def _send_targets(self) -> None:
         targets = self._limited_targets()
@@ -323,24 +353,12 @@ class OpenArmHardwareTuner:
                 self.error_vars[motor.joint_name].set("--")
             else:
                 self.error_vars[motor.joint_name].set(f"{actual - self.last_sent_targets[motor.joint_name]:+.4f}")
-        self._update_viewer(states)
+        self._update_viewer()
 
-    def _qpos_from_states(self, states: dict[str, Any]) -> np.ndarray | None:
-        targets = {
-            motor.joint_name: float(states[motor.joint_name].position)
-            for motor in self.config.motors
-            if motor.joint_name in states
-        }
-        if not targets:
-            return None
-        return self.mapper.qpos_from_hardware_targets(np.zeros(self.mapper.model.nq, dtype=np.float64), targets)
-
-    def _update_viewer(self, states: dict[str, Any]) -> None:
+    def _update_viewer(self) -> None:
         if self.viewer is None:
             return
-        qpos = self._qpos_from_states(states)
-        if qpos is None:
-            return
+        qpos = self._qpos_from_slider_values()
         try:
             self.viewer.step_qpos(qpos, rate_limit=False)
         except Exception as exc:
@@ -386,9 +404,11 @@ class OpenArmHardwareTuner:
             if motor.joint_name not in states:
                 continue
             lower, upper = self.slider_limits.get(motor.joint_name, (None, None))
-            value = _clamp(float(states[motor.joint_name].position), lower, upper)
+            hardware_q = float(states[motor.joint_name].position)
+            value = motor.hardware_to_sim(hardware_q) if self.slider_space == "sim" else hardware_q
+            value = _clamp(value, lower, upper)
             self.target_vars[motor.joint_name].set(value)
-            targets[motor.joint_name] = value
+        targets = self._hardware_targets_from_slider_values()
         if targets:
             self.limiter.reset(targets)
             self.last_sent_targets = dict(targets)
@@ -497,6 +517,7 @@ def main() -> int:
         hz=args.hz,
         kp_scale=args.kp_scale,
         kd_scale=args.kd_scale,
+        slider_space=args.slider_space,
         viewer=viewer,
         disable_on_exit=args.disable_on_exit,
     )
