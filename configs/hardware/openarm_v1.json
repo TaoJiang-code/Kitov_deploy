@@ -12,7 +12,7 @@
   "buses": [
     {
       "side": "right",
-      "interface": "can0",
+      "interface": "can1",
       "can_fd": true,
       "enabled": true,
       "motors": [
@@ -111,7 +111,7 @@
     },
     {
       "side": "left",
-      "interface": "can1",
+      "interface": "can0",
       "can_fd": true,
       "enabled": true,
       "motors": [

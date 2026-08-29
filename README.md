@@ -366,8 +366,8 @@ If `hardware_lower/hardware_upper` is `null`, the XML joint range is used and
 converted into hardware coordinates through `sign/zero_offset`; explicit JSON
 values override the XML range. `recv_timeout_us` is the normal state receive
 timeout; `enable_recv_timeout_us` is the receive timeout after enable / disable,
-currently 500ms to match the OpenArm CLI behavior. The current default assumes
-right arm on `can0`, left arm on `can1`, motor IDs `0x01..0x07`, and receive IDs
+currently 500ms to match the OpenArm CLI behavior. The current default follows
+the observed hardware wiring: right arm on `can1`, left arm on `can0`, motor IDs `0x01..0x07`, and receive IDs
 `0x11..0x17` on each bus. Treat this only as a starting point; real hardware
 needs per-joint direction and zero calibration.
 
