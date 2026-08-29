@@ -25,6 +25,7 @@ from kitov_deploy.hardware.openarm_can_bridge import (  # noqa: E402
     OpenArmQposMapper,
     load_openarm_hardware_config,
 )
+from kitov_deploy.gmr_online import make_robot_motion_viewer  # noqa: E402
 
 try:
     import tkinter as tk
@@ -44,6 +45,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--hz", type=float, default=50.0, help="Read/send refresh rate.")
     parser.add_argument("--kp-scale", type=float, default=1.0)
     parser.add_argument("--kd-scale", type=float, default=1.0)
+    parser.add_argument("--viewer", action=argparse.BooleanOptionalAction, default=True, help="Open MuJoCo viewer driven by real motor feedback.")
     parser.add_argument("--disable-on-exit", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
 
@@ -86,6 +88,19 @@ def _save_zero_offsets_to_config(path: Path, states: dict[str, Any], config: Ope
     _write_json(path, payload)
 
 
+def _update_motor_json_field(path: Path, joint_name: str, field_name: str, value: Any) -> None:
+    payload = _read_json(path)
+    found = False
+    for bus in payload.get("buses", []):
+        for motor in bus.get("motors", []):
+            if str(motor.get("joint_name", "")) == joint_name:
+                motor[field_name] = value
+                found = True
+    if not found:
+        raise KeyError(f"Cannot find joint in hardware config: {joint_name}")
+    _write_json(path, payload)
+
+
 class OpenArmHardwareTuner:
     def __init__(
         self,
@@ -97,6 +112,7 @@ class OpenArmHardwareTuner:
         hz: float,
         kp_scale: float,
         kd_scale: float,
+        viewer: Any | None,
         disable_on_exit: bool,
     ) -> None:
         if tk is None or ttk is None or messagebox is None:
@@ -108,9 +124,11 @@ class OpenArmHardwareTuner:
         self.period_ms = max(int(round(1000.0 / max(float(hz), 1e-6))), 1)
         self.kp_scale = float(kp_scale)
         self.kd_scale = float(kd_scale)
+        self.viewer = viewer
         self.disable_on_exit = bool(disable_on_exit)
         self.limiter = OpenArmCommandLimiter(hardware_config)
         self.limits = mapper.hardware_limits()
+        self.slider_limits = dict(self.limits)
         self.motor_by_joint = {motor.joint_name: motor for motor in hardware_config.motors}
 
         self.motors_enabled = False
@@ -121,6 +139,9 @@ class OpenArmHardwareTuner:
         self.target_vars: dict[str, Any] = {}
         self.current_vars: dict[str, Any] = {}
         self.current_sim_vars: dict[str, Any] = {}
+        self.sign_vars: dict[str, Any] = {}
+        self.limit_vars: dict[str, Any] = {}
+        self.scale_widgets: dict[str, Any] = {}
         self.sent_vars: dict[str, Any] = {}
         self.error_vars: dict[str, Any] = {}
         self.enabled_vars: dict[str, Any] = {}
@@ -164,14 +185,16 @@ class OpenArmHardwareTuner:
         headings = [
             "Joint",
             "Bus/IDs",
-            "Limit rad",
+            "Slider limit rad",
             "Actual hw",
             "Actual sim",
+            "Sign",
             "Target hw",
             "Slider",
             "Sent hw",
             "Error",
             "Enabled",
+            "Config",
         ]
         for col, heading in enumerate(headings):
             ttk.Label(table, text=heading).grid(row=0, column=col, sticky="w", padx=4, pady=(0, 8))
@@ -182,6 +205,8 @@ class OpenArmHardwareTuner:
             self.target_vars[motor.joint_name] = target_var
             self.current_vars[motor.joint_name] = tk.StringVar(value="--")
             self.current_sim_vars[motor.joint_name] = tk.StringVar(value="--")
+            self.sign_vars[motor.joint_name] = tk.StringVar(value=f"{float(motor.sign):+.0f}")
+            self.limit_vars[motor.joint_name] = tk.StringVar(value=self._format_limit(lower, upper))
             self.sent_vars[motor.joint_name] = tk.StringVar(value="--")
             self.error_vars[motor.joint_name] = tk.StringVar(value="--")
             self.enabled_vars[motor.joint_name] = tk.StringVar(value="--")
@@ -191,13 +216,11 @@ class OpenArmHardwareTuner:
                 table,
                 text=f"{motor.side} {_format_id(motor.send_can_id)}->{_format_id(motor.recv_can_id)}",
             ).grid(row=row, column=1, sticky="w", padx=4, pady=3)
-            ttk.Label(
-                table,
-                text=f"[{('-inf' if lower is None else f'{lower:.3f}')}, {('inf' if upper is None else f'{upper:.3f}')} ]",
-            ).grid(row=row, column=2, sticky="w", padx=4, pady=3)
+            ttk.Label(table, textvariable=self.limit_vars[motor.joint_name]).grid(row=row, column=2, sticky="w", padx=4, pady=3)
             ttk.Label(table, textvariable=self.current_vars[motor.joint_name], width=10).grid(row=row, column=3, sticky="w", padx=4)
             ttk.Label(table, textvariable=self.current_sim_vars[motor.joint_name], width=10).grid(row=row, column=4, sticky="w", padx=4)
-            ttk.Entry(table, textvariable=target_var, width=11).grid(row=row, column=5, sticky="w", padx=4)
+            ttk.Label(table, textvariable=self.sign_vars[motor.joint_name], width=5).grid(row=row, column=5, sticky="w", padx=4)
+            ttk.Entry(table, textvariable=target_var, width=11).grid(row=row, column=6, sticky="w", padx=4)
             scale = tk.Scale(
                 table,
                 from_=float(lower if lower is not None else -np.pi),
@@ -208,18 +231,49 @@ class OpenArmHardwareTuner:
                 variable=target_var,
                 showvalue=False,
             )
-            scale.grid(row=row, column=6, sticky="ew", padx=4)
-            ttk.Label(table, textvariable=self.sent_vars[motor.joint_name], width=10).grid(row=row, column=7, sticky="w", padx=4)
-            ttk.Label(table, textvariable=self.error_vars[motor.joint_name], width=10).grid(row=row, column=8, sticky="w", padx=4)
-            ttk.Label(table, textvariable=self.enabled_vars[motor.joint_name], width=8).grid(row=row, column=9, sticky="w", padx=4)
+            self.scale_widgets[motor.joint_name] = scale
+            scale.grid(row=row, column=7, sticky="ew", padx=4)
+            ttk.Label(table, textvariable=self.sent_vars[motor.joint_name], width=10).grid(row=row, column=8, sticky="w", padx=4)
+            ttk.Label(table, textvariable=self.error_vars[motor.joint_name], width=10).grid(row=row, column=9, sticky="w", padx=4)
+            ttk.Label(table, textvariable=self.enabled_vars[motor.joint_name], width=8).grid(row=row, column=10, sticky="w", padx=4)
+            ttk.Button(
+                table,
+                text="Flip Sign",
+                command=lambda joint_name=motor.joint_name: self.flip_sign(joint_name),
+            ).grid(row=row, column=11, sticky="w", padx=4)
 
-        table.columnconfigure(6, weight=1)
+        table.columnconfigure(7, weight=1)
+
+    @staticmethod
+    def _format_limit(lower: float | None, upper: float | None) -> str:
+        return f"[{('-inf' if lower is None else f'{lower:.3f}')}, {('inf' if upper is None else f'{upper:.3f}')} ]"
+
+    def _reload_config_mapping(self) -> None:
+        self.config = load_openarm_hardware_config(self.hardware_config_path)
+        self.mapper = OpenArmQposMapper(self.config)
+        self.limiter = OpenArmCommandLimiter(self.config)
+        self.limits = self.mapper.hardware_limits()
+        self.motor_by_joint = {motor.joint_name: motor for motor in self.config.motors}
+        current_targets = self._target_values()
+        self.limiter.reset(current_targets)
+        self.last_sent_targets = dict(current_targets)
+        for motor in self.config.motors:
+            lower, upper = self.slider_limits.get(motor.joint_name, (None, None))
+            self.sign_vars[motor.joint_name].set(f"{float(motor.sign):+.0f}")
+            self.limit_vars[motor.joint_name].set(self._format_limit(lower, upper))
+            self.target_vars[motor.joint_name].set(_clamp(float(self.target_vars[motor.joint_name].get()), lower, upper))
+            scale = self.scale_widgets.get(motor.joint_name)
+            if scale is not None:
+                scale.configure(
+                    from_=float(lower if lower is not None else -np.pi),
+                    to=float(upper if upper is not None else np.pi),
+                )
 
     def _initialize_targets_from_state(self) -> None:
         states = self.bridge.read_state(recv_timeout_us=self.config.safety.enable_recv_timeout_us)
         targets = {}
         for motor in self.config.motors:
-            lower, upper = self.limits.get(motor.joint_name, (None, None))
+            lower, upper = self.slider_limits.get(motor.joint_name, (None, None))
             value = _midpoint(lower, upper)
             if motor.joint_name in states:
                 value = float(states[motor.joint_name].position)
@@ -234,7 +288,7 @@ class OpenArmHardwareTuner:
     def _target_values(self) -> dict[str, float]:
         targets = {}
         for motor in self.config.motors:
-            lower, upper = self.limits.get(motor.joint_name, (None, None))
+            lower, upper = self.slider_limits.get(motor.joint_name, (None, None))
             targets[motor.joint_name] = _clamp(float(self.target_vars[motor.joint_name].get()), lower, upper)
         return targets
 
@@ -269,6 +323,28 @@ class OpenArmHardwareTuner:
                 self.error_vars[motor.joint_name].set("--")
             else:
                 self.error_vars[motor.joint_name].set(f"{actual - self.last_sent_targets[motor.joint_name]:+.4f}")
+        self._update_viewer(states)
+
+    def _qpos_from_states(self, states: dict[str, Any]) -> np.ndarray | None:
+        targets = {
+            motor.joint_name: float(states[motor.joint_name].position)
+            for motor in self.config.motors
+            if motor.joint_name in states
+        }
+        if not targets:
+            return None
+        return self.mapper.qpos_from_hardware_targets(np.zeros(self.mapper.model.nq, dtype=np.float64), targets)
+
+    def _update_viewer(self, states: dict[str, Any]) -> None:
+        if self.viewer is None:
+            return
+        qpos = self._qpos_from_states(states)
+        if qpos is None:
+            return
+        try:
+            self.viewer.step_qpos(qpos, rate_limit=False)
+        except Exception as exc:
+            self.status_var.set(f"viewer error: {exc}")
 
     def _tick(self) -> None:
         if self.closed:
@@ -309,7 +385,7 @@ class OpenArmHardwareTuner:
         for motor in self.config.motors:
             if motor.joint_name not in states:
                 continue
-            lower, upper = self.limits.get(motor.joint_name, (None, None))
+            lower, upper = self.slider_limits.get(motor.joint_name, (None, None))
             value = _clamp(float(states[motor.joint_name].position), lower, upper)
             self.target_vars[motor.joint_name].set(value)
             targets[motor.joint_name] = value
@@ -354,9 +430,29 @@ class OpenArmHardwareTuner:
         try:
             states = self.bridge.read_state(recv_timeout_us=self.config.safety.enable_recv_timeout_us)
             _save_zero_offsets_to_config(self.hardware_config_path, states, self.config)
-            self.status_var.set("saved current feedback as JSON zero_offset; restart tuner to reload config")
+            self._reload_config_mapping()
+            self._update_state_labels(states)
+            self.status_var.set("saved current feedback as JSON zero_offset")
         except Exception as exc:
             self.status_var.set(f"save zero_offset failed: {exc}")
+
+    def flip_sign(self, joint_name: str) -> None:
+        motor = self.motor_by_joint[joint_name]
+        new_sign = -1.0 if float(motor.sign) >= 0.0 else 1.0
+        ok = messagebox.askyesno(
+            "Flip Sign",
+            f"Change {joint_name} sign from {motor.sign:+.0f} to {new_sign:+.0f} in {self.hardware_config_path}?",
+        )
+        if not ok:
+            return
+        try:
+            _update_motor_json_field(self.hardware_config_path, joint_name, "sign", new_sign)
+            states = self.bridge.read_state(recv_timeout_us=self.config.safety.enable_recv_timeout_us)
+            self._reload_config_mapping()
+            self._update_state_labels(states)
+            self.status_var.set(f"flipped {joint_name} sign to {new_sign:+.0f}")
+        except Exception as exc:
+            self.status_var.set(f"flip sign failed: {exc}")
 
     def run(self) -> None:
         self.root.mainloop()
@@ -368,6 +464,11 @@ class OpenArmHardwareTuner:
         try:
             if self.disable_on_exit and self.motors_enabled:
                 self.bridge.disable_all()
+        except Exception:
+            pass
+        try:
+            if self.viewer is not None:
+                self.viewer.close()
         except Exception:
             pass
         try:
@@ -387,6 +488,7 @@ def main() -> int:
     print("[openarm_hardware_tuner] connecting to OpenArm CAN")
     bridge.connect()
     print("[openarm_hardware_tuner] connected")
+    viewer = make_robot_motion_viewer("openarm_v1", motion_fps=args.hz) if args.viewer else None
     app = OpenArmHardwareTuner(
         hardware_config_path=hardware_config_path,
         hardware_config=hardware_config,
@@ -395,6 +497,7 @@ def main() -> int:
         hz=args.hz,
         kp_scale=args.kp_scale,
         kd_scale=args.kd_scale,
+        viewer=viewer,
         disable_on_exit=args.disable_on_exit,
     )
 

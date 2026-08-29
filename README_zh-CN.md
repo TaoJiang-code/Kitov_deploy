@@ -450,11 +450,14 @@ uv run python scripts/debug/openarm_hardware_tuner.py --hz 50
 ```
 
 这个界面不接 XRobot/GMR，只调 `configs/hardware/openarm_v1.json -> openarm_can`。
-每个关节都有当前反馈角、当前反馈转回 MuJoCo 坐标后的角、目标角滑块、最后发送目标、
-误差和使能状态。`Enable All` 只使能，`Hold Current` 会把目标滑块同步到当前反馈，
-`Send Once` 发送一次经过 `max_velocity_rad_s` 限速的目标步进，`Auto Send` 会持续按
-滑块目标发送。`Set Motor Zero All` 调用电机硬件标零，`Save JSON Zero Offset` 只把
-当前反馈写进本仓库 JSON 的 `zero_offset`，不改电机内部零点。
+默认会打开一个由实机反馈驱动的 MuJoCo viewer，用来检查真实机械臂和 MuJoCo 里的关节
+转动方向是否一致。每个关节都有当前反馈角、当前反馈转回 MuJoCo 坐标后的角、目标角滑块、
+最后发送目标、误差和使能状态。`Enable All` 只使能，`Hold Current` 会把目标滑块同步
+到当前反馈，`Send Once` 发送一次经过 `max_velocity_rad_s` 限速的目标步进，`Auto Send`
+会持续按滑块目标发送。`Flip Sign` 会把对应关节的 `sign` 取反并写回 JSON，只改变
+反馈到 MuJoCo 的方向映射，不改变当前界面滑块的硬件范围。`Set Motor Zero All` 调用电机
+硬件标零，`Save JSON Zero Offset` 只把当前反馈写进本仓库 JSON 的 `zero_offset`，不改
+电机内部零点。
 
 ## 模型推理
 
