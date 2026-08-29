@@ -5,7 +5,6 @@
   "safety": {
     "recv_timeout_us": 500,
     "enable_recv_timeout_us": 2000,
-    "watchdog_timeout_s": 0.25,
     "default_max_velocity_rad_s": 5
   },
   "default_kp": 1.0,

@@ -39,12 +39,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--hz", type=float, default=50.0, help="Retarget/control rate.")
     parser.add_argument("--duration", type=float, default=0.0, help="Exit after N seconds. 0 means run until Ctrl-C.")
     parser.add_argument("--print-every", type=float, default=1.0, help="Status print interval in seconds.")
-    parser.add_argument(
-        "--startup-timeout",
-        type=float,
-        default=10.0,
-        help="Seconds to wait for the first XRobot body frame before enabling motors. 0 means wait forever.",
-    )
     parser.add_argument("--actual-human-height", type=float, default=None)
     parser.add_argument("--solver", default="daqp")
     parser.add_argument("--damping", type=float, default=5e-1)
@@ -100,19 +94,23 @@ def main() -> int:
 
     bridge = None
     motors_enabled = False
+    initial_targets: dict[str, float] | None = None
     if args.send:
         bridge = OpenArmCANBridge(hardware_config)
         print("[xrobot_openarm_control] connecting to OpenArm CAN")
         bridge.connect()
         try:
-            limiter.reset(_state_targets(bridge.read_state()))
+            initial_targets = _state_targets(bridge.read_state())
+            limiter.reset(initial_targets)
             print("[xrobot_openarm_control] initialized rate limiter from current motor positions")
         except Exception as exc:
             raise SystemExit(
                 "Cannot read initial motor state. Refusing to send because rate limiting "
                 f"needs the real starting joint positions: {exc}"
             ) from exc
-        print("[xrobot_openarm_control] waiting for first XRobot body frame before enabling motors")
+        bridge.enable_all()
+        motors_enabled = True
+        print("[xrobot_openarm_control] motors enabled; holding current posture until first XRobot body frame")
     else:
         neutral_qpos = np.zeros(mapper.model.nq, dtype=np.float64)
         limiter.reset(mapper.hardware_targets_from_qpos(neutral_qpos))
@@ -136,14 +134,15 @@ def main() -> int:
 
     period_s = 1.0 / max(float(args.hz), 1e-6)
     print_interval = max(float(args.print_every), 0.05)
-    watchdog_timeout_s = max(float(hardware_config.safety.watchdog_timeout_s), 0.0)
-    startup_timeout_s = max(float(args.startup_timeout), 0.0)
     start_time = time.monotonic()
-    last_body_time: float | None = None
     last_print = 0.0
     last_loop = start_time
+    last_targets: dict[str, float] | None = None if initial_targets is None else dict(initial_targets)
+    last_command_qpos: np.ndarray | None = None
+    last_human_motion: Any | None = None
     frames = 0
     missing = 0
+    held = 0
     sent = 0
 
     streamer.start()
@@ -162,59 +161,58 @@ def main() -> int:
             frame = streamer.read_body_frame()
             if frame is None:
                 missing += 1
-                if frames == 0:
-                    if startup_timeout_s > 0.0 and now - start_time > startup_timeout_s:
-                        print(
-                            "[xrobot_openarm_control] no XRobot body frame before startup timeout; "
-                            "motors were not enabled"
-                        )
-                        break
-                    if now - last_print >= print_interval:
-                        print(
-                            "[xrobot_openarm_control] "
-                            f"waiting for first XRobot body frame t={now - start_time:.1f}s missing={missing}"
-                        )
-                        last_print = now
-                    time.sleep(period_s)
-                    continue
-                assert last_body_time is not None
-                if args.send and watchdog_timeout_s > 0.0 and now - last_body_time > watchdog_timeout_s:
-                    print(
-                        "[xrobot_openarm_control] XRobot body frame watchdog timeout; "
-                        "disabling motors and stopping"
-                    )
+
+                if args.send and last_targets is not None:
                     assert bridge is not None
-                    if motors_enabled:
-                        bridge.disable_all()
-                    break
-                time.sleep(period_s)
+                    bridge.send_position_targets(last_targets, kp_scale=args.kp_scale, kd_scale=args.kd_scale)
+                    sent += 1
+                held += 1
+                if viewer is not None and last_command_qpos is not None:
+                    viewer.step_qpos(
+                        last_command_qpos,
+                        human_motion_data=last_human_motion,
+                        show_human_body_name=args.show_human_name,
+                        show_human_points=not args.human_axes_only,
+                        rate_limit=True,
+                    )
+                else:
+                    time.sleep(period_s)
+                last_loop = time.monotonic()
+                if now - last_print >= print_interval:
+                    avg_hz = frames / max(now - start_time, 1e-6)
+                    state = "waiting for first XRobot body frame" if frames == 0 else "holding last target"
+                    print(
+                        "[xrobot_openarm_control] "
+                        f"{state} t={now - start_time:.1f}s frames={frames} "
+                        f"missing={missing} held={held} sent={sent} avg_hz={avg_hz:.1f}"
+                        f"{_format_targets(last_targets or {}, args.print_targets)}"
+                    )
+                    last_print = now
                 continue
 
-            last_body_time = now
             qpos = retargeter.retarget(frame.body, offset_to_ground=args.offset_to_ground)
             raw_targets = mapper.hardware_targets_from_qpos(qpos)
             dt = max(now - last_loop, period_s)
             targets = limiter.limit(raw_targets, dt)
             command_qpos = mapper.qpos_from_hardware_targets(qpos, targets)
+            human_motion = None
+            if args.show_human:
+                human_motion = retargeter.prepare_debug_human_data(
+                    frame.body,
+                    offset_to_ground=args.offset_to_ground,
+                    include_unscaled=args.show_all_human,
+                )
+            last_targets = dict(targets)
+            last_command_qpos = command_qpos.copy()
+            last_human_motion = human_motion
             frames += 1
 
             if args.send:
                 assert bridge is not None
-                if not motors_enabled:
-                    bridge.enable_all()
-                    motors_enabled = True
-                    print("[xrobot_openarm_control] motors enabled after first XRobot body frame")
                 bridge.send_position_targets(targets, kp_scale=args.kp_scale, kd_scale=args.kd_scale)
                 sent += 1
 
             if viewer is not None:
-                human_motion = None
-                if args.show_human:
-                    human_motion = retargeter.prepare_debug_human_data(
-                        frame.body,
-                        offset_to_ground=args.offset_to_ground,
-                        include_unscaled=args.show_all_human,
-                    )
                 viewer.step_qpos(
                     command_qpos,
                     human_motion_data=human_motion,
@@ -234,7 +232,7 @@ def main() -> int:
                 print(
                     "[xrobot_openarm_control] "
                     f"t={now - start_time:.1f}s frames={frames} missing={missing} "
-                    f"sent={sent} avg_hz={avg_hz:.1f}"
+                    f"held={held} sent={sent} avg_hz={avg_hz:.1f}"
                     f"{_format_targets(targets, args.print_targets)}"
                 )
                 last_print = now

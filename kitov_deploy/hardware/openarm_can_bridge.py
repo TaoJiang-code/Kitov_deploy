@@ -63,7 +63,6 @@ class OpenArmBusConfig:
 class OpenArmSafetyConfig:
     recv_timeout_us: int
     enable_recv_timeout_us: int
-    watchdog_timeout_s: float
     default_max_velocity_rad_s: float
 
 
@@ -108,7 +107,6 @@ def load_openarm_hardware_config(path: str | Path = DEFAULT_OPENARM_HARDWARE_CON
     safety = OpenArmSafetyConfig(
         recv_timeout_us=int(safety_payload.get("recv_timeout_us", 500)),
         enable_recv_timeout_us=int(safety_payload.get("enable_recv_timeout_us", 2000)),
-        watchdog_timeout_s=float(safety_payload.get("watchdog_timeout_s", 0.25)),
         default_max_velocity_rad_s=float(safety_payload.get("default_max_velocity_rad_s", 0.5)),
     )
 

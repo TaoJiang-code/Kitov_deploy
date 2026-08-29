@@ -434,10 +434,9 @@ uv run python scripts/xrobot_openarm_control.py \
   --enable-motors
 ```
 
-脚本会先连接 CAN 并读取当前电机位置，但会等到第一帧 XRobot 人体数据到达后才
-`enable_all`。启动阶段默认最多等 `--startup-timeout 10` 秒；运行过程中如果
-PICO/XRobot 数据超过 `configs/hardware/openarm_v1.json` 里的 `watchdog_timeout_s`
-没有更新，会 disable 并停止。退出时默认也会 `disable_all`。
+脚本会先连接 CAN、读取当前电机位置，然后立刻 `enable_all`。第一帧 XRobot 人体数据
+到来前，会持续发送当前电机位置作为保持目标；运行中如果突然没有新的人体数据，也会
+持续发送上一帧目标，让机械臂保持当前姿势。退出时默认会 `disable_all`。
 
 ## 模型推理
 

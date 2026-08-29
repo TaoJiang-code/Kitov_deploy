@@ -450,11 +450,11 @@ uv run python scripts/xrobot_openarm_control.py \
   --enable-motors
 ```
 
-The script connects to CAN and reads current motor positions first, but it only
-calls `enable_all` after the first XRobot body frame arrives. Startup waits up
-to `--startup-timeout 10` seconds by default. During runtime, if PICO/XRobot
-frames stop updating longer than `watchdog_timeout_s`, the script disables
-motors and exits. On exit, it disables motors by default.
+The script connects to CAN, reads current motor positions, and then calls
+`enable_all` immediately. Before the first XRobot body frame arrives, it keeps
+sending the current motor positions as the hold target. During runtime, if
+PICO/XRobot frames stop updating, the script keeps sending the last target so
+the arm holds the current posture. On exit, it disables motors by default.
 
 ## Model Inference
 
