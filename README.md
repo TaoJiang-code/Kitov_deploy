@@ -361,12 +361,14 @@ configs/hardware/openarm_v1.json
 
 It defines the CAN interface, motor type, send/receive CAN IDs, direction
 `sign`, `zero_offset`, `kp/kd`, and max velocity for each MuJoCo joint.
-`recv_timeout_us` is the normal state receive timeout; `enable_recv_timeout_us`
-is the receive timeout after enable / disable, currently 500ms to match the
-OpenArm CLI behavior. The current default assumes right arm on `can0`, left arm
-on `can1`, motor IDs `0x01..0x07`, and receive IDs `0x11..0x17` on each bus.
-Treat this only as a starting point; real hardware needs per-joint direction and
-zero calibration.
+If `hardware_lower/hardware_upper` is `null`, the XML joint range is used and
+converted into hardware coordinates through `sign/zero_offset`; explicit JSON
+values override the XML range. `recv_timeout_us` is the normal state receive
+timeout; `enable_recv_timeout_us` is the receive timeout after enable / disable,
+currently 500ms to match the OpenArm CLI behavior. The current default assumes
+right arm on `can0`, left arm on `can1`, motor IDs `0x01..0x07`, and receive IDs
+`0x11..0x17` on each bus. Treat this only as a starting point; real hardware
+needs per-joint direction and zero calibration.
 
 Install system dependencies before building OpenArm CAN. The CMake error
 `Could not find CLI11` means `libcli11-dev` is missing:
@@ -453,11 +455,16 @@ uv run python scripts/xrobot_openarm_control.py \
   --enable-motors
 ```
 
-The script connects to CAN, reads current motor positions, and then calls
-`enable_all` immediately. Before the first XRobot body frame arrives, it keeps
-sending the current motor positions as the hold target. During runtime, if
-PICO/XRobot frames stop updating, the script keeps sending the last target so
-the arm holds the current posture. On exit, it disables motors by default.
+The script connects to CAN and then calls `enable_all` immediately. It then waits
+briefly for stable current motor positions and only sends the MIT hold target
+after the startup hold target passes `hardware_lower/hardware_upper` or XML joint
+range validation. By default, startup readings whose absolute value exceeds
+`--startup-position-abs-limit 6.283` are also rejected so boundary-like values
+such as `-12.4rad` are not sent as the current posture. Before the first XRobot
+body frame arrives, it keeps sending the current motor positions as the hold
+target. During runtime, if PICO/XRobot frames stop updating, the script keeps
+sending the last target so the arm holds the current posture. On exit, it
+disables motors by default.
 
 ## Model Inference
 

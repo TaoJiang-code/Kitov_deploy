@@ -209,12 +209,32 @@ class OpenArmQposMapper:
         targets = {}
         for motor in self.config.motors:
             target = motor.sim_to_hardware(sim_q_by_joint[motor.joint_name])
-            if motor.hardware_lower is not None:
-                target = max(target, motor.hardware_lower)
-            if motor.hardware_upper is not None:
-                target = min(target, motor.hardware_upper)
+            lower, upper = self.hardware_limit(motor)
+            if lower is not None:
+                target = max(target, lower)
+            if upper is not None:
+                target = min(target, upper)
             targets[motor.joint_name] = float(target)
         return targets
+
+    def hardware_limit(self, motor: OpenArmMotorConfig) -> tuple[float | None, float | None]:
+        lower = motor.hardware_lower
+        upper = motor.hardware_upper
+        if lower is None or upper is None:
+            xml_limit = self._joint_ranges.get(motor.joint_name)
+            if xml_limit is not None:
+                xml_lower, xml_upper = xml_limit
+                hardware_xml_limits = sorted(
+                    (motor.sim_to_hardware(xml_lower), motor.sim_to_hardware(xml_upper))
+                )
+                if lower is None:
+                    lower = float(hardware_xml_limits[0])
+                if upper is None:
+                    upper = float(hardware_xml_limits[1])
+        return lower, upper
+
+    def hardware_limits(self) -> dict[str, tuple[float | None, float | None]]:
+        return {motor.joint_name: self.hardware_limit(motor) for motor in self.config.motors}
 
     def qpos_from_hardware_targets(self, reference_qpos: np.ndarray, targets: dict[str, float]) -> np.ndarray:
         qpos = np.asarray(reference_qpos, dtype=np.float64).reshape(-1).copy()
@@ -316,13 +336,14 @@ class OpenArmCANBridge:
             arm.disable_all()
             arm.recv_all(self.config.safety.enable_recv_timeout_us)
 
-    def read_state(self) -> dict[str, MotorState]:
+    def read_state(self, *, recv_timeout_us: int | None = None) -> dict[str, MotorState]:
         self._require_connected()
+        timeout_us = self.config.safety.recv_timeout_us if recv_timeout_us is None else int(recv_timeout_us)
         states: dict[str, MotorState] = {}
         for bus in self._active_buses:
             arm = self._arms[bus.side]
             arm.refresh_all()
-            arm.recv_all(self.config.safety.recv_timeout_us)
+            arm.recv_all(timeout_us)
             motors = [motor for motor in bus.motors if motor.enabled]
             for motor_config, motor in zip(motors, arm.get_arm().get_motors(), strict=False):
                 states[motor_config.joint_name] = MotorState(

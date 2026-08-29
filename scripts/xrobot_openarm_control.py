@@ -13,7 +13,7 @@ import signal
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -54,6 +54,18 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--send", action="store_true", help="Send MIT position targets to openarm_can.")
     parser.add_argument("--enable-motors", action="store_true", help="Call enable_all before sending commands.")
     parser.add_argument("--disable-on-exit", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--startup-hold-warmup",
+        type=float,
+        default=1.0,
+        help="Seconds to wait for stable motor state before sending the first hold target.",
+    )
+    parser.add_argument(
+        "--startup-position-abs-limit",
+        type=float,
+        default=float(2.0 * np.pi),
+        help="Reject startup hold targets whose absolute motor position exceeds this value. 0 disables the check.",
+    )
     parser.add_argument("--kp-scale", type=float, default=1.0)
     parser.add_argument("--kd-scale", type=float, default=1.0)
     parser.add_argument("--print-targets", choices=["none", "head", "all"], default="head")
@@ -70,8 +82,88 @@ def _format_targets(targets: dict[str, float], mode: str) -> str:
     return f" targets[{joined}]"
 
 
+def _format_limits(limits: dict[str, tuple[float | None, float | None]], mode: str) -> str:
+    if mode == "none":
+        return ""
+    items = sorted(limits.items())
+    if mode == "head":
+        items = items[: min(6, len(items))]
+    joined = ", ".join(
+        f"{name}=[{('-inf' if lower is None else f'{lower:.3f}')},"
+        f"{('inf' if upper is None else f'{upper:.3f}')}]"
+        for name, (lower, upper) in items
+    )
+    return f" limits[{joined}]"
+
+
 def _state_targets(states: dict[str, Any]) -> dict[str, float]:
     return {name: float(state.position) for name, state in states.items()}
+
+
+def _validate_hold_targets(
+    targets: dict[str, float],
+    expected_names: set[str],
+    *,
+    hardware_limits: dict[str, tuple[float | None, float | None]],
+    abs_limit_rad: float,
+) -> tuple[bool, str]:
+    missing = sorted(expected_names.difference(targets))
+    if missing:
+        return False, f"missing={missing[:4]}"
+    for name in sorted(expected_names):
+        value = float(targets[name])
+        if not np.isfinite(value):
+            return False, f"{name} is not finite: {value}"
+        lower, upper = hardware_limits.get(name, (None, None))
+        if lower is not None and value < lower:
+            return False, f"{name}={value:.4f} below hardware lower {lower:.4f}"
+        if upper is not None and value > upper:
+            return False, f"{name}={value:.4f} above hardware upper {upper:.4f}"
+        if abs_limit_rad > 0.0 and abs(value) > abs_limit_rad:
+            return False, f"{name}={value:.4f} exceeds startup limit {abs_limit_rad:.4f}"
+    return True, "ok"
+
+
+def _read_startup_hold_targets(
+    bridge: OpenArmCANBridge,
+    hardware_config: Any,
+    *,
+    hardware_limits: dict[str, tuple[float | None, float | None]],
+    warmup_s: float,
+    abs_limit_rad: float,
+    print_interval_s: float,
+    should_stop: Callable[[], bool],
+) -> dict[str, float] | None:
+    expected_names = {motor.joint_name for motor in hardware_config.motors}
+    start = time.monotonic()
+    last_print = 0.0
+    attempts = 0
+    last_reason = "not read yet"
+
+    while not should_stop():
+        attempts += 1
+        states = bridge.read_state(recv_timeout_us=hardware_config.safety.enable_recv_timeout_us)
+        targets = _state_targets(states)
+        ok, reason = _validate_hold_targets(
+            targets,
+            expected_names,
+            hardware_limits=hardware_limits,
+            abs_limit_rad=abs_limit_rad,
+        )
+        elapsed = time.monotonic() - start
+        if ok and elapsed >= warmup_s:
+            return targets
+
+        last_reason = "warming up" if ok else reason
+        now = time.monotonic()
+        if now - last_print >= print_interval_s:
+            print(
+                "[xrobot_openarm_control] "
+                f"waiting for valid startup motor state t={elapsed:.1f}s attempts={attempts} "
+                f"reason={last_reason}"
+            )
+            last_print = now
+    return None
 
 
 def main() -> int:
@@ -92,26 +184,51 @@ def main() -> int:
     signal.signal(signal.SIGINT, _request_stop)
     signal.signal(signal.SIGTERM, _request_stop)
 
+    period_s = 1.0 / max(float(args.hz), 1e-6)
+    print_interval = max(float(args.print_every), 0.05)
+
     bridge = None
     motors_enabled = False
     initial_targets: dict[str, float] | None = None
+    hardware_limits = mapper.hardware_limits()
     if args.send:
         bridge = OpenArmCANBridge(hardware_config)
         print("[xrobot_openarm_control] connecting to OpenArm CAN")
         bridge.connect()
-        try:
-            initial_targets = _state_targets(bridge.read_state())
-            limiter.reset(initial_targets)
-            print("[xrobot_openarm_control] initialized rate limiter from current motor positions")
-        except Exception as exc:
-            raise SystemExit(
-                "Cannot read initial motor state. Refusing to send because rate limiting "
-                f"needs the real starting joint positions: {exc}"
-            ) from exc
         bridge.enable_all()
         motors_enabled = True
+        print(
+            "[xrobot_openarm_control] motors enabled; reading startup hold posture"
+            f"{_format_limits(hardware_limits, args.print_targets)}"
+        )
+        try:
+            initial_targets = _read_startup_hold_targets(
+                bridge,
+                hardware_config,
+                hardware_limits=hardware_limits,
+                warmup_s=max(float(args.startup_hold_warmup), 0.0),
+                abs_limit_rad=max(float(args.startup_position_abs_limit), 0.0),
+                print_interval_s=print_interval,
+                should_stop=lambda: stop,
+            )
+        except Exception as exc:
+            if motors_enabled:
+                bridge.disable_all()
+            raise SystemExit(
+                "Cannot read a safe startup motor state. Refusing to send hold targets: "
+                f"{exc}"
+            ) from exc
+        if initial_targets is None:
+            if motors_enabled:
+                bridge.disable_all()
+            print("[xrobot_openarm_control] stopped before startup hold posture was available")
+            return 130
+        limiter.reset(initial_targets)
         bridge.send_position_targets(initial_targets, kp_scale=args.kp_scale, kd_scale=args.kd_scale)
-        print("[xrobot_openarm_control] motors enabled; holding current posture until first XRobot body frame")
+        print(
+            "[xrobot_openarm_control] initialized hold target from validated motor state; "
+            "holding current posture until first XRobot body frame"
+        )
     else:
         neutral_qpos = np.zeros(mapper.model.nq, dtype=np.float64)
         limiter.reset(mapper.hardware_targets_from_qpos(neutral_qpos))
@@ -133,8 +250,6 @@ def main() -> int:
     if args.viewer:
         viewer = retargeter.make_viewer(motion_fps=args.hz)
 
-    period_s = 1.0 / max(float(args.hz), 1e-6)
-    print_interval = max(float(args.print_every), 0.05)
     start_time = time.monotonic()
     last_print = 0.0
     last_loop = start_time
