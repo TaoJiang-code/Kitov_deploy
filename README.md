@@ -455,6 +455,29 @@ uv run python scripts/xrobot_openarm_control.py \
   --enable-motors
 ```
 
+To record whether the GMR-retargeted simulation angles match the real motor
+feedback, add `--record-joint-log`:
+
+```bash
+uv run python scripts/xrobot_openarm_control.py \
+  --hz 50 \
+  --quiet-gmr \
+  --send \
+  --enable-motors \
+  --record-joint-log
+```
+
+By default this writes `logs/openarm_joint_compare_*.csv`. Each row contains one
+joint for one frame: `retarget_sim_q` is the GMR/IK MuJoCo joint angle,
+`raw_hardware_target` is that angle converted through `sign/zero_offset`,
+`command_hardware_target` is the limited target actually sent to the motor,
+`actual_hardware_q` is motor feedback, and `actual_sim_q` is feedback converted
+back to MuJoCo coordinates. For joint1/2/3, a persistent large
+`hardware_error` means the motor is not following the target; opposite
+`actual_sim_q` and `retarget_sim_q` directions mean the joint `sign` is wrong;
+a mostly constant offset means `zero_offset` is wrong; feedback changing on a
+different joint means the CAN ID to MuJoCo joint mapping is wrong.
+
 The script connects to CAN and then calls `enable_all` immediately. It then waits
 briefly for stable current motor positions and only sends the MIT hold target
 after the startup hold target passes `hardware_lower/hardware_upper` or XML joint

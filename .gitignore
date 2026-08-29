@@ -26,6 +26,7 @@ MUJOCO_LOG.TXT
 core
 core.*
 *.core
+logs/
 
 # XRobot / retargeting captures
 date/

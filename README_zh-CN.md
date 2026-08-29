@@ -434,6 +434,28 @@ uv run python scripts/xrobot_openarm_control.py \
   --enable-motors
 ```
 
+如果要记录“GMR 解算出来的仿真角”和“实机电机实际角”是否一致，加
+`--record-joint-log`：
+
+```bash
+uv run python scripts/xrobot_openarm_control.py \
+  --hz 50 \
+  --quiet-gmr \
+  --send \
+  --enable-motors \
+  --record-joint-log
+```
+
+默认会写到 `logs/openarm_joint_compare_*.csv`。CSV 里每个关节每帧一行：
+`retarget_sim_q` 是 GMR/IK 解算出的 MuJoCo 关节角，`raw_hardware_target` 是按
+`sign/zero_offset` 转成的硬件目标角，`command_hardware_target` 是限速/限幅后真正发送
+给电机的目标角，`actual_hardware_q` 是电机反馈角，`actual_sim_q` 是把反馈角再按当前
+`sign/zero_offset` 转回 MuJoCo 坐标后的角度。重点看 joint1/2/3：如果
+`hardware_error` 长期很大，说明实机没跟上或控制参数/限速太保守；如果 `actual_sim_q`
+方向和 `retarget_sim_q` 相反，改对应关节的 `sign`；如果基本同方向但整体偏一个常数，
+改 `zero_offset`；如果你动 joint1 但 CSV 里 joint2 的反馈在变，改 CAN ID 和 joint
+名称对应关系。
+
 脚本会先连接 CAN，然后立刻 `enable_all`。之后会等待一小段时间读取稳定的当前电机
 位置，只有启动保持目标通过 `hardware_lower/hardware_upper` 或 XML joint range 检查后
 才会发送 MIT hold target。启动读数会先尝试按 `2*pi` 周期折回到有效范围内，例如把

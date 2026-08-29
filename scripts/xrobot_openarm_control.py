@@ -9,6 +9,7 @@ imports openarm_can or sends CAN frames. Real hardware control requires
 from __future__ import annotations
 
 import argparse
+import csv
 import signal
 import sys
 import time
@@ -75,6 +76,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--kp-scale", type=float, default=1.0)
     parser.add_argument("--kd-scale", type=float, default=1.0)
     parser.add_argument("--print-targets", choices=["none", "head", "all"], default="head")
+    parser.add_argument(
+        "--record-joint-log",
+        nargs="?",
+        const="",
+        default=None,
+        help=(
+            "Write per-joint CSV rows comparing retargeted sim_q, sent hardware target, "
+            "and actual motor feedback. If no path is given, a timestamped file under logs/ is used."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -104,6 +115,99 @@ def _format_limits(limits: dict[str, tuple[float | None, float | None]], mode: s
 
 def _state_targets(states: dict[str, Any]) -> dict[str, float]:
     return {name: float(state.position) for name, state in states.items()}
+
+
+def _joint_log_path(value: str | None) -> Path | None:
+    if value is None:
+        return None
+    if value == "":
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        return REPO_ROOT / "logs" / f"openarm_joint_compare_{stamp}.csv"
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    return REPO_ROOT / path
+
+
+class JointCompareLogger:
+    def __init__(self, path: Path, mapper: OpenArmQposMapper, hardware_config: Any) -> None:
+        self.path = path
+        self.mapper = mapper
+        self.motor_by_joint = {motor.joint_name: motor for motor in hardware_config.motors}
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._file = path.open("w", newline="", encoding="utf-8")
+        self._writer = csv.DictWriter(
+            self._file,
+            fieldnames=[
+                "t",
+                "phase",
+                "frame",
+                "joint_name",
+                "send_can_id",
+                "recv_can_id",
+                "sign",
+                "zero_offset",
+                "retarget_sim_q",
+                "raw_hardware_target",
+                "command_hardware_target",
+                "command_sim_q",
+                "actual_hardware_q",
+                "actual_sim_q",
+                "hardware_error",
+                "sim_error",
+            ],
+        )
+        self._writer.writeheader()
+
+    def close(self) -> None:
+        self._file.close()
+
+    def write(
+        self,
+        *,
+        t: float,
+        phase: str,
+        frame: int,
+        retarget_qpos: np.ndarray,
+        command_qpos: np.ndarray,
+        raw_targets: dict[str, float],
+        command_targets: dict[str, float],
+        actual_states: dict[str, Any] | None,
+    ) -> None:
+        retarget_sim = self.mapper.sim_joint_positions(retarget_qpos)
+        command_sim = self.mapper.sim_joint_positions(command_qpos)
+        for joint_name in sorted(command_targets):
+            motor = self.motor_by_joint[joint_name]
+            actual_hardware = None
+            actual_sim = None
+            hardware_error = None
+            sim_error = None
+            if actual_states is not None and joint_name in actual_states:
+                actual_hardware = float(actual_states[joint_name].position)
+                actual_sim = motor.hardware_to_sim(actual_hardware)
+                hardware_error = actual_hardware - float(command_targets[joint_name])
+                sim_error = actual_sim - float(command_sim[joint_name])
+            self._writer.writerow(
+                {
+                    "t": f"{float(t):.6f}",
+                    "phase": phase,
+                    "frame": int(frame),
+                    "joint_name": joint_name,
+                    "send_can_id": f"0x{int(motor.send_can_id):02x}",
+                    "recv_can_id": f"0x{int(motor.recv_can_id):02x}",
+                    "sign": f"{float(motor.sign):.6f}",
+                    "zero_offset": f"{float(motor.zero_offset):.6f}",
+                    "retarget_sim_q": f"{float(retarget_sim[joint_name]):.8f}",
+                    "raw_hardware_target": f"{float(raw_targets[joint_name]):.8f}",
+                    "command_hardware_target": f"{float(command_targets[joint_name]):.8f}",
+                    "command_sim_q": f"{float(command_sim[joint_name]):.8f}",
+                    "actual_hardware_q": "" if actual_hardware is None else f"{actual_hardware:.8f}",
+                    "actual_sim_q": "" if actual_sim is None else f"{actual_sim:.8f}",
+                    "hardware_error": "" if hardware_error is None else f"{hardware_error:.8f}",
+                    "sim_error": "" if sim_error is None else f"{sim_error:.8f}",
+                }
+            )
+        self._file.flush()
 
 
 def _normalize_target_to_limits(
@@ -273,6 +377,11 @@ def main() -> int:
     motors_enabled = False
     initial_targets: dict[str, float] | None = None
     hardware_limits = mapper.hardware_limits()
+    log_path = _joint_log_path(args.record_joint_log)
+    joint_logger = JointCompareLogger(log_path, mapper, hardware_config) if log_path is not None else None
+    log_read_warning_printed = False
+    if joint_logger is not None:
+        print(f"[xrobot_openarm_control] recording joint comparison log: {log_path}")
     if args.send:
         bridge = OpenArmCANBridge(hardware_config)
         print("[xrobot_openarm_control] connecting to OpenArm CAN")
@@ -298,6 +407,8 @@ def main() -> int:
         except Exception as exc:
             if motors_enabled:
                 bridge.disable_all()
+            if joint_logger is not None:
+                joint_logger.close()
             raise SystemExit(
                 "Cannot read a safe startup motor state. Refusing to send hold targets: "
                 f"{exc}"
@@ -305,10 +416,30 @@ def main() -> int:
         if initial_targets is None:
             if motors_enabled:
                 bridge.disable_all()
+            if joint_logger is not None:
+                joint_logger.close()
             print("[xrobot_openarm_control] stopped before startup hold posture was available")
             return 130
         limiter.reset(initial_targets)
         bridge.send_position_targets(initial_targets, kp_scale=args.kp_scale, kd_scale=args.kd_scale)
+        if joint_logger is not None:
+            startup_qpos = mapper.qpos_from_hardware_targets(np.zeros(mapper.model.nq, dtype=np.float64), initial_targets)
+            try:
+                startup_actual_states = bridge.read_state()
+            except Exception as exc:
+                startup_actual_states = None
+                print(f"[xrobot_openarm_control] joint log actual-state read failed: {exc}")
+                log_read_warning_printed = True
+            joint_logger.write(
+                t=0.0,
+                phase="startup_hold",
+                frame=0,
+                retarget_qpos=startup_qpos,
+                command_qpos=startup_qpos,
+                raw_targets=initial_targets,
+                command_targets=initial_targets,
+                actual_states=startup_actual_states,
+            )
         print(
             "[xrobot_openarm_control] initialized hold target from validated motor state; "
             "holding current posture until first XRobot body frame"
@@ -339,7 +470,13 @@ def main() -> int:
     last_print = 0.0
     last_loop = start_time
     last_targets: dict[str, float] | None = None if initial_targets is None else dict(initial_targets)
+    last_raw_targets: dict[str, float] | None = None if initial_targets is None else dict(initial_targets)
     last_command_qpos: np.ndarray | None = None
+    last_retarget_qpos: np.ndarray | None = None
+    if initial_targets is not None:
+        initial_qpos = mapper.qpos_from_hardware_targets(np.zeros(mapper.model.nq, dtype=np.float64), initial_targets)
+        last_command_qpos = initial_qpos.copy()
+        last_retarget_qpos = initial_qpos.copy()
     last_human_motion: Any | None = None
     frames = 0
     missing = 0
@@ -366,6 +503,29 @@ def main() -> int:
                 if args.send and last_targets is not None:
                     assert bridge is not None
                     bridge.send_position_targets(last_targets, kp_scale=args.kp_scale, kd_scale=args.kd_scale)
+                    if (
+                        joint_logger is not None
+                        and last_raw_targets is not None
+                        and last_command_qpos is not None
+                        and last_retarget_qpos is not None
+                    ):
+                        try:
+                            actual_states = bridge.read_state()
+                        except Exception as exc:
+                            actual_states = None
+                            if not log_read_warning_printed:
+                                print(f"[xrobot_openarm_control] joint log actual-state read failed: {exc}")
+                                log_read_warning_printed = True
+                        joint_logger.write(
+                            t=now - start_time,
+                            phase="hold_no_xrobot",
+                            frame=frames,
+                            retarget_qpos=last_retarget_qpos,
+                            command_qpos=last_command_qpos,
+                            raw_targets=last_raw_targets,
+                            command_targets=last_targets,
+                            actual_states=actual_states,
+                        )
                     sent += 1
                 held += 1
                 if viewer is not None and last_command_qpos is not None:
@@ -404,14 +564,35 @@ def main() -> int:
                     include_unscaled=args.show_all_human,
                 )
             last_targets = dict(targets)
+            last_raw_targets = dict(raw_targets)
             last_command_qpos = command_qpos.copy()
+            last_retarget_qpos = qpos.copy()
             last_human_motion = human_motion
             frames += 1
 
+            actual_states = None
             if args.send:
                 assert bridge is not None
                 bridge.send_position_targets(targets, kp_scale=args.kp_scale, kd_scale=args.kd_scale)
+                if joint_logger is not None:
+                    try:
+                        actual_states = bridge.read_state()
+                    except Exception as exc:
+                        if not log_read_warning_printed:
+                            print(f"[xrobot_openarm_control] joint log actual-state read failed: {exc}")
+                            log_read_warning_printed = True
                 sent += 1
+            if joint_logger is not None:
+                joint_logger.write(
+                    t=now - start_time,
+                    phase="retarget",
+                    frame=frames,
+                    retarget_qpos=qpos,
+                    command_qpos=command_qpos,
+                    raw_targets=raw_targets,
+                    command_targets=targets,
+                    actual_states=actual_states,
+                )
 
             if viewer is not None:
                 viewer.step_qpos(
@@ -440,6 +621,8 @@ def main() -> int:
     finally:
         if viewer is not None:
             viewer.close()
+        if joint_logger is not None:
+            joint_logger.close()
         streamer.close()
         if bridge is not None and args.disable_on_exit and motors_enabled:
             bridge.disable_all()
