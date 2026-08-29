@@ -41,6 +41,7 @@ Implemented:
 scripts/debug/xrobot_probe.py
 scripts/debug/xrobot_retarget.py
 scripts/debug/openarm_can_probe.py
+scripts/debug/openarm_hardware_tuner.py
 scripts/debug/replay_xrobot_frame.py
 scripts/debug/check_policy_model.py
 scripts/debug/replay_bfm_policy.py
@@ -455,29 +456,6 @@ uv run python scripts/xrobot_openarm_control.py \
   --enable-motors
 ```
 
-To record whether the GMR-retargeted simulation angles match the real motor
-feedback, add `--record-joint-log`:
-
-```bash
-uv run python scripts/xrobot_openarm_control.py \
-  --hz 50 \
-  --quiet-gmr \
-  --send \
-  --enable-motors \
-  --record-joint-log
-```
-
-By default this writes `logs/openarm_joint_compare_*.csv`. Each row contains one
-joint for one frame: `retarget_sim_q` is the GMR/IK MuJoCo joint angle,
-`raw_hardware_target` is that angle converted through `sign/zero_offset`,
-`command_hardware_target` is the limited target actually sent to the motor,
-`actual_hardware_q` is motor feedback, and `actual_sim_q` is feedback converted
-back to MuJoCo coordinates. For joint1/2/3, a persistent large
-`hardware_error` means the motor is not following the target; opposite
-`actual_sim_q` and `retarget_sim_q` directions mean the joint `sign` is wrong;
-a mostly constant offset means `zero_offset` is wrong; feedback changing on a
-different joint means the CAN ID to MuJoCo joint mapping is wrong.
-
 The script connects to CAN and then calls `enable_all` immediately. It then waits
 briefly for stable current motor positions and only sends the MIT hold target
 after the startup hold target passes `hardware_lower/hardware_upper` or XML joint
@@ -489,6 +467,22 @@ folded startup readings whose absolute value exceeds `--startup-position-abs-lim
 sending the current motor positions as the hold target. During runtime, if
 PICO/XRobot frames stop updating, the script keeps sending the last target so
 the arm holds the current posture. On exit, it disables motors by default.
+
+Standalone hardware tuning panel:
+
+```bash
+uv run python scripts/debug/openarm_hardware_tuner.py --hz 50
+```
+
+This panel does not use XRobot/GMR. It only tests
+`configs/hardware/openarm_v1.json -> openarm_can`. Each joint row shows current
+motor feedback, feedback converted back into MuJoCo coordinates, the target
+slider, the last sent target, error, and enabled state. `Enable All` only enables
+motors, `Hold Current` copies feedback into the target sliders, `Send Once`
+sends one `max_velocity_rad_s` limited target step, and `Auto Send` continuously
+sends slider targets. `Set Motor Zero All` calls the motor hardware zero command;
+`Save JSON Zero Offset` only writes current feedback into this repository's
+`zero_offset` fields and does not change motor-side zero.
 
 ## Model Inference
 

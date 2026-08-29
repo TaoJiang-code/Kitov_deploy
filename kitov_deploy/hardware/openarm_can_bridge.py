@@ -336,6 +336,14 @@ class OpenArmCANBridge:
             arm.disable_all()
             arm.recv_all(self.config.safety.enable_recv_timeout_us)
 
+    def set_zero_all(self) -> None:
+        self._require_connected()
+        for arm in self._arms.values():
+            arm.set_callback_mode_all(self.oa.CallbackMode.IGNORE)
+            arm.set_zero_all()
+            arm.recv_all(self.config.safety.enable_recv_timeout_us)
+            arm.set_callback_mode_all(self.oa.CallbackMode.STATE)
+
     def read_state(self, *, recv_timeout_us: int | None = None) -> dict[str, MotorState]:
         self._require_connected()
         timeout_us = self.config.safety.recv_timeout_us if recv_timeout_us is None else int(recv_timeout_us)
