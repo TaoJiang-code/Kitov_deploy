@@ -360,10 +360,13 @@ configs/hardware/openarm_v1.json
 ```
 
 It defines the CAN interface, motor type, send/receive CAN IDs, direction
-`sign`, `zero_offset`, `kp/kd`, and max velocity for each MuJoCo joint. The
-current default assumes right arm on `can0`, left arm on `can1`, motor IDs
-`0x01..0x07`, and receive IDs `0x11..0x17` on each bus. Treat this only as a
-starting point; real hardware needs per-joint direction and zero calibration.
+`sign`, `zero_offset`, `kp/kd`, and max velocity for each MuJoCo joint.
+`recv_timeout_us` is the normal state receive timeout; `enable_recv_timeout_us`
+is the receive timeout after enable / disable, currently 500ms to match the
+OpenArm CLI behavior. The current default assumes right arm on `can0`, left arm
+on `can1`, motor IDs `0x01..0x07`, and receive IDs `0x11..0x17` on each bus.
+Treat this only as a starting point; real hardware needs per-joint direction and
+zero calibration.
 
 Install system dependencies before building OpenArm CAN. The CMake error
 `Could not find CLI11` means `libcli11-dev` is missing:

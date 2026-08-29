@@ -350,7 +350,7 @@ PICO / XRobot
 configs/hardware/openarm_v1.json
 ```
 
-里面定义了每个 MuJoCo 关节对应的 CAN 口、电机类型、发送 ID、接收 ID、方向 `sign`、零点 `zero_offset`、`kp/kd` 和最大速度。当前默认是假设右臂在 `can0`、左臂在 `can1`，每条 CAN 总线上的电机 ID 是 `0x01..0x07`，接收 ID 是 `0x11..0x17`。这个默认只能作为起点，实机前必须按真实硬件校准。
+里面定义了每个 MuJoCo 关节对应的 CAN 口、电机类型、发送 ID、接收 ID、方向 `sign`、零点 `zero_offset`、`kp/kd` 和最大速度。`recv_timeout_us` 是普通状态回读等待时间，`enable_recv_timeout_us` 是 enable / disable 后等待电机回包的时间，当前按 OpenArm CLI 的做法设为 500ms。当前默认是假设右臂在 `can0`、左臂在 `can1`，每条 CAN 总线上的电机 ID 是 `0x01..0x07`，接收 ID 是 `0x11..0x17`。这个默认只能作为起点，实机前必须按真实硬件校准。
 
 安装 OpenArm CAN 库前先装系统依赖。你遇到的 `Could not find CLI11`
 就是这里缺 `libcli11-dev`：

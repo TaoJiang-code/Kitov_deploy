@@ -110,6 +110,7 @@ def main() -> int:
             ) from exc
         bridge.enable_all()
         motors_enabled = True
+        bridge.send_position_targets(initial_targets, kp_scale=args.kp_scale, kd_scale=args.kd_scale)
         print("[xrobot_openarm_control] motors enabled; holding current posture until first XRobot body frame")
     else:
         neutral_qpos = np.zeros(mapper.model.nq, dtype=np.float64)

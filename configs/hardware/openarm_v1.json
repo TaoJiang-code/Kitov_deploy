@@ -4,7 +4,7 @@
   "xml_path": "Glush_Zoo/openarm_v1/mjcf/scene.xml",
   "safety": {
     "recv_timeout_us": 500,
-    "enable_recv_timeout_us": 2000,
+    "enable_recv_timeout_us": 500000,
     "default_max_velocity_rad_s": 5
   },
   "default_kp": 1.0,

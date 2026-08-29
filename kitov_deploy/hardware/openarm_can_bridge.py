@@ -106,7 +106,7 @@ def load_openarm_hardware_config(path: str | Path = DEFAULT_OPENARM_HARDWARE_CON
     safety_payload = dict(payload.get("safety", {}))
     safety = OpenArmSafetyConfig(
         recv_timeout_us=int(safety_payload.get("recv_timeout_us", 500)),
-        enable_recv_timeout_us=int(safety_payload.get("enable_recv_timeout_us", 2000)),
+        enable_recv_timeout_us=int(safety_payload.get("enable_recv_timeout_us", 500000)),
         default_max_velocity_rad_s=float(safety_payload.get("default_max_velocity_rad_s", 0.5)),
     )
 
@@ -278,7 +278,8 @@ class OpenArmCANBridge:
             motor_types = [self._motor_type(motor.motor_type) for motor in motors]
             send_ids = [motor.send_can_id for motor in motors]
             recv_ids = [motor.recv_can_id for motor in motors]
-            arm.init_arm_motors(motor_types, send_ids, recv_ids)
+            control_modes = [self.oa.ControlMode.MIT for _ in motors]
+            arm.init_arm_motors(motor_types, send_ids, recv_ids, control_modes)
             arm.set_callback_mode_all(self.oa.CallbackMode.STATE)
             self._arms[bus.side] = arm
         self.connected = True
