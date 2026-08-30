@@ -2,6 +2,7 @@
   "schema": "kitov_deploy.openarm_hardware.v1",
   "robot": "openarm_v1",
   "xml_path": "Glush_Zoo/openarm_v1/mjcf/scene.xml",
+  "ee_body": "openarm_v1_dm_gripper",
   "safety": {
     "recv_timeout_us": 500,
     "enable_recv_timeout_us": 500000,

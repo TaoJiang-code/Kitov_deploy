@@ -53,6 +53,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--show-human-name", action="store_true")
     parser.add_argument("--send", action="store_true", help="Send MIT position targets to openarm_can.")
     parser.add_argument("--enable-motors", action="store_true", help="Call enable_all before sending commands.")
+    parser.add_argument(
+        "--enable-ee-control",
+        action="store_true",
+        help="Control configured ee_body from XRobot controller triggers. Requires --send.",
+    )
     parser.add_argument("--disable-on-exit", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
         "--startup-hold-warmup",
@@ -100,6 +105,13 @@ def _format_limits(limits: dict[str, tuple[float | None, float | None]], mode: s
         for name, (lower, upper) in items
     )
     return f" limits[{joined}]"
+
+
+def _format_ee_status(status: dict[str, str]) -> str:
+    if not status:
+        return ""
+    joined = ", ".join(f"{name}={value}" for name, value in sorted(status.items()))
+    return f" ee[{joined}]"
 
 
 def _state_targets(states: dict[str, Any]) -> dict[str, float]:
@@ -252,8 +264,15 @@ def main() -> int:
     args = _parse_args()
     if args.send and not args.enable_motors:
         raise SystemExit("--send requires --enable-motors. Use dry-run without --send until mapping is verified.")
+    if args.enable_ee_control and not args.send:
+        raise SystemExit("--enable-ee-control requires --send.")
 
     hardware_config = load_openarm_hardware_config(args.hardware_config)
+    if args.enable_ee_control and hardware_config.ee_body is None:
+        raise SystemExit(
+            "--enable-ee-control requires an ee_body in configs/hardware/openarm_v1.json. "
+            "Use \"ee_body\": \"openarm_v1_dm_gripper\" after the end-effector is connected."
+        )
     mapper = OpenArmQposMapper(hardware_config)
     limiter = OpenArmCommandLimiter(hardware_config)
 
@@ -348,6 +367,8 @@ def main() -> int:
     missing = 0
     held = 0
     sent = 0
+    ee_sent = 0
+    ee_status: dict[str, str] = {}
 
     streamer.start()
     print(
@@ -369,6 +390,13 @@ def main() -> int:
                 if args.send and last_targets is not None:
                     assert bridge is not None
                     bridge.send_position_targets(last_targets, kp_scale=args.kp_scale, kd_scale=args.kd_scale)
+                    if args.enable_ee_control:
+                        controller_frame = streamer.read_controller_frame()
+                        ee_status = bridge.send_ee_from_controller_inputs(
+                            controller_frame.controllers,
+                            now=now,
+                        )
+                        ee_sent += 1
                     sent += 1
                 held += 1
                 if viewer is not None and last_command_qpos is not None:
@@ -390,6 +418,7 @@ def main() -> int:
                         f"{state} t={now - start_time:.1f}s frames={frames} "
                         f"missing={missing} held={held} sent={sent} avg_hz={avg_hz:.1f}"
                         f"{_format_targets(last_targets or {}, args.print_targets)}"
+                        f"{_format_ee_status(ee_status)}"
                     )
                     last_print = now
                 continue
@@ -414,6 +443,13 @@ def main() -> int:
             if args.send:
                 assert bridge is not None
                 bridge.send_position_targets(targets, kp_scale=args.kp_scale, kd_scale=args.kd_scale)
+                if args.enable_ee_control:
+                    controller_frame = streamer.read_controller_frame()
+                    ee_status = bridge.send_ee_from_controller_inputs(
+                        controller_frame.controllers,
+                        now=now,
+                    )
+                    ee_sent += 1
                 sent += 1
 
             if viewer is not None:
@@ -438,6 +474,7 @@ def main() -> int:
                     f"t={now - start_time:.1f}s frames={frames} missing={missing} "
                     f"held={held} sent={sent} avg_hz={avg_hz:.1f}"
                     f"{_format_targets(targets, args.print_targets)}"
+                    f"{_format_ee_status(ee_status)}"
                 )
                 last_print = now
     finally:
@@ -446,7 +483,7 @@ def main() -> int:
         streamer.close()
         if bridge is not None and args.disable_on_exit and motors_enabled:
             bridge.disable_all()
-        print(f"[xrobot_openarm_control] stopped frames={frames} sent={sent}")
+        print(f"[xrobot_openarm_control] stopped frames={frames} sent={sent} ee_sent={ee_sent}")
 
     return 0
 

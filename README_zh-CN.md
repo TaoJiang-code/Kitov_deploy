@@ -49,6 +49,7 @@ scripts/run_g1_policy_sim.sh
 kitov_deploy/xrobot_stream.py
 kitov_deploy/gmr_online.py
 kitov_deploy/hardware/openarm_can_bridge.py
+ee_body/
 kitov_deploy/policy_runtime.py
 kitov_deploy/mujoco_policy_sim.py
 configs/gmr/xrobot_to_g1.json
@@ -353,6 +354,41 @@ configs/hardware/openarm_v1.json
 
 里面定义了每个 MuJoCo 关节对应的 CAN 口、电机类型、发送 ID、接收 ID、方向 `sign`、零点 `zero_offset`、`kp/kd` 和最大速度。`hardware_lower/hardware_upper` 如果是 `null`，会自动使用 XML 里的 joint range，并经过 `sign/zero_offset` 转到硬件坐标；如果手动填写，则以 JSON 里的值为准。`recv_timeout_us` 是普通状态回读等待时间，`enable_recv_timeout_us` 是 enable / disable 后等待电机回包的时间，当前按 OpenArm CLI 的做法设为 500ms。当前默认按实机观察配置为右臂 `can1`、左臂 `can0`，每条 CAN 总线上的电机 ID 是 `0x01..0x07`，接收 ID 是 `0x11..0x17`。这个默认只能作为起点，实机前必须按真实硬件校准。
 
+末端执行器放在独立目录：
+
+```text
+ee_body/
+  config/openarm_v1_dm_gripper.json
+  drivers/openarm_can_gripper.py
+```
+
+`configs/hardware/openarm_v1.json` 里只保留一行末端选择。当前选中 OpenArm DM 夹爪：
+
+```json
+"ee_body": "openarm_v1_dm_gripper"
+```
+
+不接末端时改成：
+
+```json
+"ee_body": "none"
+```
+
+这样会加载 `ee_body/config/openarm_v1_dm_gripper.json`，并使用
+`ee_body/drivers/openarm_can_gripper.py` 里的实现。末端执行器自己的发送位置、读取当前角度、
+标零、`kp/kd`、速度和力矩限制都在 `ee_body/` 里维护；手臂的 7DoF 映射仍然只由
+`configs/hardware/openarm_v1.json` 负责。
+如果末端插件实现了调试面板，`scripts/debug/openarm_hardware_tuner.py` 会自动把它挂到
+硬件调参界面里。
+
+OpenArm DM 夹爪配置里，`open_position` 是张开位置，`close_position` 是机械极限闭合
+位置，`safe_close_position` 是日常 trigger 控制允许闭合到的最深位置。`close_speed_rad_s`
+和 `close_torque_pu` 用于闭合，默认比张开更慢、力矩更小，避免夹碎物体。
+`torque_stop_threshold` 如果填数值，会在反馈力矩超过阈值时停止继续闭合；默认 `null`
+表示先不用力矩阈值，只靠低力矩限制和卡滞检测。`stall_velocity_threshold` 和
+`stall_hold_time_s` 用于检测“目标还在继续闭合，但夹爪速度已经接近 0”的接触状态，检测到后
+保持当前夹爪位置，松开 trigger 后解锁。
+
 安装 OpenArm CAN 库前先装系统依赖。你遇到的 `Could not find CLI11`
 就是这里缺 `libcli11-dev`：
 
@@ -435,6 +471,23 @@ uv run python scripts/xrobot_openarm_control.py \
   --enable-motors
 ```
 
+如果已经在 `configs/hardware/openarm_v1.json` 里选择了末端执行器，例如
+`"ee_body": "openarm_v1_dm_gripper"`，并且要用 PICO trigger 控制夹爪，再额外加
+`--enable-ee-control`：
+
+```bash
+uv run python scripts/xrobot_openarm_control.py \
+  --hz 50 \
+  --quiet-gmr \
+  --send \
+  --enable-motors \
+  --enable-ee-control
+```
+
+默认左 trigger 控 `left_gripper`，右 trigger 控 `right_gripper`。trigger 松开对应张开，
+trigger 按下对应向 `safe_close_position` 闭合；闭合过程会使用夹爪配置里的低速、低力矩和
+接触保持逻辑。
+
 脚本会先连接 CAN，然后立刻 `enable_all`。之后会等待一小段时间读取稳定的当前电机
 位置，只有启动保持目标通过 `hardware_lower/hardware_upper` 或 XML joint range 检查后
 才会发送 MIT hold target。启动读数会先尝试按 `2*pi` 周期折回到有效范围内，例如把
@@ -459,6 +512,14 @@ MuJoCo 命令方向和真实机械臂方向是否一致。每个关节都有当�
 会把对应关节的 `sign` 取反并写回 JSON。`Set Motor Zero All` 调用电机硬件标零，
 `Save JSON Zero Offset` 只把当前反馈写进本仓库 JSON 的 `zero_offset`，不改电机内部
 零点。
+
+如果 `configs/hardware/openarm_v1.json` 里选择了末端执行器，界面底部会自动出现对应
+插件面板。当前 OpenArm DM 夹爪插件会显示 `left_gripper/right_gripper` 的实际角、
+速度、力矩、目标滑块，并且可以直接调 `sign`、`safe_close_position`、
+`open_speed_rad_s/open_torque_pu`、`close_speed_rad_s/close_torque_pu` 和
+`torque_stop_threshold`。`Open` 张开，`Safe Close` 用 `safe_close_position`
+低速低力矩闭合，`Close Limit` 才会发机械极限闭合位置。`Flip Sign` 会先改运行时方向，
+`Save EE JSON` 才会把这些末端参数写回 `ee_body/config/openarm_v1_dm_gripper.json`。
 
 如果只想做底层电机角测试，可以用硬件角滑块：
 

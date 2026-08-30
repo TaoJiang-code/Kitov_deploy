@@ -44,6 +44,22 @@ class XRobotBodyFrame:
     raw_poses: dict[str, list[float]]
 
 
+@dataclass(frozen=True)
+class XRobotControllerState:
+    primary_button: bool
+    secondary_button: bool
+    axis_click: bool
+    trigger: float
+    grip: float
+    axis: tuple[float, float]
+
+
+@dataclass(frozen=True)
+class XRobotControllerFrame:
+    controllers: dict[str, XRobotControllerState]
+    timestamp_ns: int
+
+
 def _load_xrobot_sdk() -> Any:
     try:
         import xrobotoolkit_sdk as xrt
@@ -70,6 +86,25 @@ def quat_mul_wxyz(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
         ],
         dtype=np.float64,
     )
+
+
+def _safe_xrt_call(xrt: Any, name: str, default: Any = None) -> Any:
+    fn = getattr(xrt, name, None)
+    if fn is None:
+        return default
+    try:
+        return fn()
+    except Exception:
+        return default
+
+
+def _axis(values: Any) -> tuple[float, float]:
+    if isinstance(values, (list, tuple)) and len(values) >= 2:
+        try:
+            return (float(values[0]), float(values[1]))
+        except Exception:
+            return (0.0, 0.0)
+    return (0.0, 0.0)
 
 
 class XRobotBodyStreamer:
@@ -125,3 +160,27 @@ class XRobotBodyStreamer:
             body[joint_name] = (pos, quat_wxyz)
 
         return XRobotBodyFrame(body=body, timestamp_ns=timestamp_ns, raw_poses=raw_body)
+
+    def read_controller_frame(self) -> XRobotControllerFrame:
+        timestamp_ns = int(_safe_xrt_call(self._xrt, "get_time_stamp_ns", 0) or 0)
+        return XRobotControllerFrame(
+            controllers={
+                "left": XRobotControllerState(
+                    primary_button=bool(_safe_xrt_call(self._xrt, "get_X_button", False)),
+                    secondary_button=bool(_safe_xrt_call(self._xrt, "get_Y_button", False)),
+                    axis_click=bool(_safe_xrt_call(self._xrt, "get_left_axis_click", False)),
+                    trigger=float(_safe_xrt_call(self._xrt, "get_left_trigger", 0.0) or 0.0),
+                    grip=float(_safe_xrt_call(self._xrt, "get_left_grip", 0.0) or 0.0),
+                    axis=_axis(_safe_xrt_call(self._xrt, "get_left_axis", [0.0, 0.0])),
+                ),
+                "right": XRobotControllerState(
+                    primary_button=bool(_safe_xrt_call(self._xrt, "get_A_button", False)),
+                    secondary_button=bool(_safe_xrt_call(self._xrt, "get_B_button", False)),
+                    axis_click=bool(_safe_xrt_call(self._xrt, "get_right_axis_click", False)),
+                    trigger=float(_safe_xrt_call(self._xrt, "get_right_trigger", 0.0) or 0.0),
+                    grip=float(_safe_xrt_call(self._xrt, "get_right_grip", 0.0) or 0.0),
+                    axis=_axis(_safe_xrt_call(self._xrt, "get_right_axis", [0.0, 0.0])),
+                ),
+            },
+            timestamp_ns=timestamp_ns,
+        )

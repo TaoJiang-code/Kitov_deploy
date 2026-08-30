@@ -26,5 +26,7 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["kitov_deploy*"]
+include = ["kitov_deploy*", "ee_body*"]
 
+[tool.setuptools.package-data]
+ee_body = ["config/*.json", "README.md"]

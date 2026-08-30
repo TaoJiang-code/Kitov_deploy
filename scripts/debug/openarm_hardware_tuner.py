@@ -154,6 +154,7 @@ class OpenArmHardwareTuner:
         self.sent_vars: dict[str, Any] = {}
         self.error_vars: dict[str, Any] = {}
         self.enabled_vars: dict[str, Any] = {}
+        self.ee_panel: Any | None = None
 
         self.root = tk.Tk()
         self.root.title("OpenArm Hardware Tuner")
@@ -252,6 +253,27 @@ class OpenArmHardwareTuner:
             ).grid(row=row, column=11, sticky="w", padx=4)
 
         table.columnconfigure(7, weight=1)
+        self._build_ee_panel(table, row=len(self.config.motors) + 1)
+
+    def _build_ee_panel(self, parent: Any, *, row: int) -> None:
+        ee_body = self.config.ee_body
+        create_panel = getattr(ee_body, "create_tuner_panel", None)
+        if ee_body is None or create_panel is None:
+            return
+
+        frame = ttk.LabelFrame(parent, text=f"End Effector: {self.config.ee_body_name}", padding=8)
+        frame.grid(row=row, column=0, columnspan=12, sticky="ew", padx=4, pady=(14, 0))
+        parent.rowconfigure(row, weight=0)
+        try:
+            self.ee_panel = create_panel(
+                parent=frame,
+                bridge=self.bridge,
+                status_callback=self.status_var.set,
+                hz=1000.0 / float(self.period_ms),
+            )
+        except Exception as exc:
+            self.ee_panel = None
+            self.status_var.set(f"ee tuner unavailable: {exc}")
 
     @staticmethod
     def _format_limit(lower: float | None, upper: float | None) -> str:
@@ -354,6 +376,10 @@ class OpenArmHardwareTuner:
             else:
                 self.error_vars[motor.joint_name].set(f"{actual - self.last_sent_targets[motor.joint_name]:+.4f}")
         self._update_viewer()
+        if self.ee_panel is not None:
+            update_state = getattr(self.ee_panel, "update_state", None)
+            if update_state is not None:
+                update_state(states)
 
     def _update_viewer(self) -> None:
         if self.viewer is None:
@@ -385,6 +411,10 @@ class OpenArmHardwareTuner:
             self.bridge.enable_all()
             self.motors_enabled = True
             self.hold_current()
+            if self.ee_panel is not None:
+                on_motors_enabled = getattr(self.ee_panel, "on_motors_enabled", None)
+                if on_motors_enabled is not None:
+                    on_motors_enabled()
             self.status_var.set("motors enabled; holding current target")
         except Exception as exc:
             self.status_var.set(f"enable failed: {exc}")
@@ -393,6 +423,10 @@ class OpenArmHardwareTuner:
         try:
             self.bridge.disable_all()
             self.motors_enabled = False
+            if self.ee_panel is not None:
+                on_motors_disabled = getattr(self.ee_panel, "on_motors_disabled", None)
+                if on_motors_disabled is not None:
+                    on_motors_disabled()
             self.status_var.set("motors disabled")
         except Exception as exc:
             self.status_var.set(f"disable failed: {exc}")
@@ -482,6 +516,10 @@ class OpenArmHardwareTuner:
             return
         self.closed = True
         try:
+            if self.ee_panel is not None:
+                close_panel = getattr(self.ee_panel, "close", None)
+                if close_panel is not None:
+                    close_panel()
             if self.disable_on_exit and self.motors_enabled:
                 self.bridge.disable_all()
         except Exception:

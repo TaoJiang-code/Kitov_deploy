@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 
+from ee_body import load_ee_body
 from kitov_deploy.mjcf_utils import prepared_mjcf_path
 
 
@@ -72,6 +73,8 @@ class OpenArmHardwareConfig:
     xml_path: Path
     buses: tuple[OpenArmBusConfig, ...]
     safety: OpenArmSafetyConfig
+    ee_body_name: str | None = None
+    ee_body: Any | None = None
 
     @property
     def motors(self) -> tuple[OpenArmMotorConfig, ...]:
@@ -152,11 +155,16 @@ def load_openarm_hardware_config(path: str | Path = DEFAULT_OPENARM_HARDWARE_CON
             )
         )
 
+    ee_body_name = payload.get("ee_body", payload.get("ee_body_config"))
+    ee_body = load_ee_body(ee_body_name)
+
     return OpenArmHardwareConfig(
         robot=str(payload.get("robot", "openarm_v1")),
         xml_path=_resolve_path(payload["xml_path"]),
         buses=tuple(buses),
         safety=safety,
+        ee_body_name=None if ee_body_name is None else str(ee_body_name),
+        ee_body=ee_body,
     )
 
 
@@ -306,6 +314,7 @@ class OpenArmCANBridge:
         self.oa: Any | None = None
         self._arms: dict[str, Any] = {}
         self._active_buses: tuple[OpenArmBusConfig, ...] = tuple(bus for bus in config.buses if bus.enabled)
+        self._ee_body = config.ee_body
         self.connected = False
 
     def connect(self) -> None:
@@ -318,6 +327,13 @@ class OpenArmCANBridge:
             recv_ids = [motor.recv_can_id for motor in motors]
             control_modes = [self.oa.ControlMode.MIT for _ in motors]
             arm.init_arm_motors(motor_types, send_ids, recv_ids, control_modes)
+            if self._ee_body is not None:
+                self._ee_body.init_bus(
+                    side=bus.side,
+                    arm=arm,
+                    motor_type=self._motor_type,
+                    control_mode=self._control_mode,
+                )
             arm.set_callback_mode_all(self.oa.CallbackMode.STATE)
             self._arms[bus.side] = arm
         self.connected = True
@@ -338,6 +354,13 @@ class OpenArmCANBridge:
         if not hasattr(self.oa.MotorType, name):
             raise RuntimeError(f"openarm_can.MotorType has no member {name!r}")
         return getattr(self.oa.MotorType, name)
+
+    def _control_mode(self, name: str) -> Any:
+        assert self.oa is not None
+        mode_name = str(name).upper()
+        if not hasattr(self.oa.ControlMode, mode_name):
+            raise RuntimeError(f"openarm_can.ControlMode has no member {mode_name!r}")
+        return getattr(self.oa.ControlMode, mode_name)
 
     def enable_all(self) -> None:
         self._require_connected()
@@ -379,6 +402,16 @@ class OpenArmCANBridge:
                     torque=_optional_float_call(motor, "get_torque"),
                     enabled=_optional_bool_call(motor, "is_enabled"),
                 )
+            if self._ee_body is not None:
+                states.update(
+                    self._ee_body.read_state(
+                        side=bus.side,
+                        arm=arm,
+                        make_state=MotorState,
+                        optional_float=_optional_float_call,
+                        optional_bool=_optional_bool_call,
+                    )
+                )
         return states
 
     def send_position_targets(
@@ -409,6 +442,75 @@ class OpenArmCANBridge:
             arm.get_arm().mit_control_all(params)
             if recv:
                 arm.recv_all(self.config.safety.recv_timeout_us)
+
+    def send_ee_positions(
+        self,
+        positions: dict[str, float],
+        *,
+        kp_scale: float = 1.0,
+        kd_scale: float = 1.0,
+        profiles: dict[str, tuple[float, float]] | None = None,
+        recv: bool = True,
+    ) -> None:
+        self._require_connected()
+        if self._ee_body is None:
+            raise RuntimeError("No ee_body is configured for this OpenArm hardware config")
+        self._ee_body.send_positions(
+            arms=self._arms,
+            positions=positions,
+            recv_timeout_us=self.config.safety.recv_timeout_us,
+            kp_scale=kp_scale,
+            kd_scale=kd_scale,
+            profiles=profiles,
+            recv=recv,
+        )
+
+    def send_ee_from_controller_inputs(
+        self,
+        controllers: dict[str, Any],
+        *,
+        states: dict[str, MotorState] | None = None,
+        now: float | None = None,
+        recv: bool = True,
+    ) -> dict[str, str]:
+        self._require_connected()
+        if self._ee_body is None:
+            raise RuntimeError("No ee_body is configured for this OpenArm hardware config")
+        state_snapshot = self.read_state(recv_timeout_us=self.config.safety.recv_timeout_us) if states is None else states
+        return self._ee_body.send_from_controller_inputs(
+            arms=self._arms,
+            controllers=controllers,
+            states=state_snapshot,
+            now=0.0 if now is None else float(now),
+            recv_timeout_us=self.config.safety.recv_timeout_us,
+            recv=recv,
+        )
+
+    def send_gripper_positions(
+        self,
+        positions: dict[str, float],
+        *,
+        kp_scale: float = 1.0,
+        kd_scale: float = 1.0,
+        profiles: dict[str, tuple[float, float]] | None = None,
+        recv: bool = True,
+    ) -> None:
+        self.send_ee_positions(
+            positions,
+            kp_scale=kp_scale,
+            kd_scale=kd_scale,
+            profiles=profiles,
+            recv=recv,
+        )
+
+    def set_ee_zero(self) -> None:
+        self._require_connected()
+        if self._ee_body is None:
+            raise RuntimeError("No ee_body is configured for this OpenArm hardware config")
+        self._ee_body.set_zero(
+            arms=self._arms,
+            recv_timeout_us=self.config.safety.enable_recv_timeout_us,
+        )
 
     def _require_connected(self) -> None:
         if not self.connected or self.oa is None:

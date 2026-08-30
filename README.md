@@ -52,6 +52,7 @@ scripts/run_g1_policy_sim.sh
 kitov_deploy/xrobot_stream.py
 kitov_deploy/gmr_online.py
 kitov_deploy/hardware/openarm_can_bridge.py
+ee_body/
 kitov_deploy/policy_runtime.py
 kitov_deploy/mujoco_policy_sim.py
 configs/gmr/xrobot_to_g1.json
@@ -371,6 +372,45 @@ the observed hardware wiring: right arm on `can1`, left arm on `can0`, motor IDs
 `0x11..0x17` on each bus. Treat this only as a starting point; real hardware
 needs per-joint direction and zero calibration.
 
+End-effector bodies live in a separate directory:
+
+```text
+ee_body/
+  config/openarm_v1_dm_gripper.json
+  drivers/openarm_can_gripper.py
+```
+
+`configs/hardware/openarm_v1.json` keeps only one end-effector selector. It
+currently selects the OpenArm DM gripper:
+
+```json
+"ee_body": "openarm_v1_dm_gripper"
+```
+
+Use `none` when no end-effector is attached:
+
+```json
+"ee_body": "none"
+```
+
+This loads `ee_body/config/openarm_v1_dm_gripper.json` and uses the implementation in
+`ee_body/drivers/openarm_can_gripper.py`. End-effector position sending, state reading,
+zeroing, `kp/kd`, speed, and torque limits are maintained under `ee_body/`. Arm
+7DoF mapping remains in `configs/hardware/openarm_v1.json`.
+If an end-effector plugin exposes a tuner panel,
+`scripts/debug/openarm_hardware_tuner.py` mounts it automatically.
+
+For the OpenArm DM gripper config, `open_position` is the open target,
+`close_position` is the mechanical close limit, and `safe_close_position` is the
+deepest target used by normal trigger control. `close_speed_rad_s` and
+`close_torque_pu` are intentionally lower than the open values to avoid crushing
+objects. If `torque_stop_threshold` is set, closing stops when feedback torque
+crosses that threshold. The default `null` leaves torque-threshold stopping off
+until the feedback units are verified, while still using low torque and stall
+detection. `stall_velocity_threshold` and `stall_hold_time_s` detect contact
+when the gripper is still commanded closed but velocity stays near zero; the
+driver then holds the current gripper position until the trigger is released.
+
 Install system dependencies before building OpenArm CAN. The CMake error
 `Could not find CLI11` means `libcli11-dev` is missing:
 
@@ -456,6 +496,24 @@ uv run python scripts/xrobot_openarm_control.py \
   --enable-motors
 ```
 
+If `configs/hardware/openarm_v1.json` selects an end-effector, for example
+`"ee_body": "openarm_v1_dm_gripper"`, add `--enable-ee-control` to drive the
+grippers from PICO triggers:
+
+```bash
+uv run python scripts/xrobot_openarm_control.py \
+  --hz 50 \
+  --quiet-gmr \
+  --send \
+  --enable-motors \
+  --enable-ee-control
+```
+
+The left trigger controls `left_gripper`; the right trigger controls
+`right_gripper`. Released means open, pressed means closing toward
+`safe_close_position`, using the low-speed, low-torque, contact-hold logic from
+the end-effector config.
+
 The script connects to CAN and then calls `enable_all` immediately. It then waits
 briefly for stable current motor positions and only sends the MIT hold target
 after the startup hold target passes `hardware_lower/hardware_upper` or XML joint
@@ -488,6 +546,16 @@ sliders, `Send Once` sends one `max_velocity_rad_s` limited target step, and
 `sign` and writes it back to JSON. `Set Motor Zero All` calls the motor hardware
 zero command; `Save JSON Zero Offset` only writes current feedback into this
 repository's `zero_offset` fields and does not change motor-side zero.
+
+If `configs/hardware/openarm_v1.json` selects an end effector, the bottom of the
+panel automatically shows that plugin's controls. The current OpenArm DM gripper
+plugin shows actual position, velocity, torque, and target sliders, and lets you
+edit `sign`, `safe_close_position`, `open_speed_rad_s/open_torque_pu`,
+`close_speed_rad_s/close_torque_pu`, and `torque_stop_threshold`. `Open` opens
+the gripper, `Safe Close` closes to `safe_close_position` with the low-speed,
+low-torque profile, and `Close Limit` sends the mechanical close limit.
+`Flip Sign` changes the runtime direction first; `Save EE JSON` persists these
+end-effector fields to `ee_body/config/openarm_v1_dm_gripper.json`.
 
 For low-level raw motor-angle tests:
 
