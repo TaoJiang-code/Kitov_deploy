@@ -44,6 +44,7 @@ scripts/debug/check_policy_model.py
 scripts/debug/replay_bfm_policy.py
 scripts/xrobot_policy_infer.py
 scripts/xrobot_openarm_control.py
+scripts/run_openarm_teleop.sh
 scripts/run_bumi_policy_sim.sh
 scripts/run_g1_policy_sim.sh
 kitov_deploy/xrobot_stream.py
@@ -429,6 +430,44 @@ uv pip install .
 ```bash
 openarm-can-cli -i can0 can_configure
 openarm-can-cli -i can1 can_configure
+```
+
+推荐的 OpenArm 实机遥操作启动入口会自动检查并配置 `can0/can1`，确认
+`XRoboToolkit PC Service` 已启动，然后运行实时控制。`Ctrl+C` 退出时会自动停止
+本次控制程序并关闭 `RoboticsServiceProcess`：
+
+```bash
+./scripts/run_openarm_teleop.sh
+```
+
+默认等价于：
+
+```bash
+uv run python scripts/xrobot_openarm_control.py \
+  --hz 50 \
+  --quiet-gmr \
+  --send \
+  --enable-motors \
+  --enable-ee-control \
+  --viewer \
+  --show-human
+```
+
+额外参数可以直接追加到脚本后面，例如：
+
+```bash
+./scripts/run_openarm_teleop.sh --print-targets head
+```
+
+可选环境变量：
+
+```bash
+KITOV_HZ=50
+KITOV_OPENARM_CAN_INTERFACES="can0 can1"
+KITOV_OPENARM_CAN_BITRATE=1000000
+KITOV_OPENARM_CAN_DBITRATE=5000000
+KITOV_XROBOT_SERVICE_SCRIPT=/opt/apps/roboticsservice/runService.sh
+KITOV_STOP_ROBOTICS_SERVICE_ON_EXIT=1
 ```
 
 只读检查电机状态，不会 enable 电机：

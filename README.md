@@ -47,6 +47,7 @@ scripts/debug/check_policy_model.py
 scripts/debug/replay_bfm_policy.py
 scripts/xrobot_policy_infer.py
 scripts/xrobot_openarm_control.py
+scripts/run_openarm_teleop.sh
 scripts/run_bumi_policy_sim.sh
 scripts/run_g1_policy_sim.sh
 kitov_deploy/xrobot_stream.py
@@ -452,6 +453,45 @@ Configure SocketCAN:
 ```bash
 openarm-can-cli -i can0 can_configure
 openarm-can-cli -i can1 can_configure
+```
+
+The recommended OpenArm hardware teleop entrypoint checks and configures
+`can0/can1`, makes sure `XRoboToolkit PC Service` is running, then starts
+realtime control. `Ctrl+C` stops the control process and shuts down
+`RoboticsServiceProcess`:
+
+```bash
+./scripts/run_openarm_teleop.sh
+```
+
+By default this is equivalent to:
+
+```bash
+uv run python scripts/xrobot_openarm_control.py \
+  --hz 50 \
+  --quiet-gmr \
+  --send \
+  --enable-motors \
+  --enable-ee-control \
+  --viewer \
+  --show-human
+```
+
+Extra arguments are appended to the Python command:
+
+```bash
+./scripts/run_openarm_teleop.sh --print-targets head
+```
+
+Optional environment variables:
+
+```bash
+KITOV_HZ=50
+KITOV_OPENARM_CAN_INTERFACES="can0 can1"
+KITOV_OPENARM_CAN_BITRATE=1000000
+KITOV_OPENARM_CAN_DBITRATE=5000000
+KITOV_XROBOT_SERVICE_SCRIPT=/opt/apps/roboticsservice/runService.sh
+KITOV_STOP_ROBOTICS_SERVICE_ON_EXIT=1
 ```
 
 Read motor state without enabling motors:
