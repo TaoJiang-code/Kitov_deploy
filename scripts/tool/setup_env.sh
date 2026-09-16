@@ -210,7 +210,7 @@ install_torch_auto() {
 }
 
 verify_torch() {
-  uv run python - <<'PY'
+  uv run --no-sync python - <<'PY'
 import torch
 print("[setup_env] torch:", torch.__version__)
 print("[setup_env] cuda available:", torch.cuda.is_available())
@@ -221,8 +221,10 @@ PY
 }
 
 verify_onnxruntime() {
-  uv run python - <<'PY'
+  uv run --no-sync python - <<'PY'
 import onnxruntime as ort
+import numpy as np
+print("[setup_env] numpy:", np.__version__)
 print("[setup_env] onnxruntime:", ort.__version__)
 print("[setup_env] onnxruntime providers:", ort.get_available_providers())
 PY

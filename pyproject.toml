@@ -14,7 +14,7 @@ dependencies = [
   "loop-rate-limiters",
   "mink",
   "mujoco",
-  "numpy",
+  "numpy<2",
   "protobuf",
   "pybind11",
   "pyzmq",

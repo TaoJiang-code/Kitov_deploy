@@ -170,6 +170,7 @@ KITOV_INSTALL_TARGET=skip scripts/tool/setup_env.sh
 
 默认 `KITOV_ONNXRUNTIME_MODE=auto`。x86 会装普通 CPU ONNX Runtime；Jetson
 会优先从 Jetson AI Lab 的 JetPack 6 / cu126 索引安装 `onnxruntime-gpu==1.23.0`。
+这个 Jetson wheel 使用 NumPy 1.x ABI，所以项目依赖默认固定为 `numpy<2`。
 如果不是 JetPack 6，手动指定匹配当前 JetPack/L4T 的 wheel：
 
 ```bash
