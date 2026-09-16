@@ -9,7 +9,9 @@ TORCH_MODE="${KITOV_TORCH_MODE:-auto}"
 JETSON_TORCH_WHEEL="${KITOV_JETSON_TORCH_WHEEL:-}"
 ONNXRUNTIME_MODE="${KITOV_ONNXRUNTIME_MODE:-auto}"
 JETSON_ONNXRUNTIME_WHEEL="${KITOV_JETSON_ONNXRUNTIME_WHEEL:-}"
+XROBOT_SETUP="${KITOV_XROBOT_SETUP:-}"
 RECREATE_VENV="${KITOV_RECREATE_VENV:-0}"
+FORCE_XROBOT_SERVICE_INSTALL="${KITOV_FORCE_XROBOT_SERVICE_INSTALL:-${KITOV_FORCE_XROBOT_SERVICE_DEB:-0}}"
 JETSON_ONNXRUNTIME_JP6_CU126_INDEX="https://pypi.jetson-ai-lab.io/jp6/cu126"
 JETSON_ONNXRUNTIME_VERSION="${KITOV_JETSON_ONNXRUNTIME_VERSION:-1.23.0}"
 
@@ -61,6 +63,47 @@ EOF
         ;;
       4)
         INSTALL_TARGET="skip"
+        return
+        ;;
+      *)
+        printf '[setup_env] invalid choice: %s\n' "${choice}" >&2
+        ;;
+    esac
+  done
+}
+
+choose_xrobot_setup() {
+  if [ -n "${XROBOT_SETUP}" ]; then
+    return
+  fi
+
+  cat <<'EOF'
+[setup_env] Select XRobot setup:
+  1) skip        do not install XRobot SDK or PC Service
+  2) sdk         build/install xrobotoolkit_sdk into this .venv
+  3) service     install XRoboToolkit PC Service from .deb or source
+  4) all         SDK + PC Service
+EOF
+
+  local choice
+  while true; do
+    printf '[setup_env] choice [1-4]: '
+    read -r choice
+    case "${choice}" in
+      1)
+        XROBOT_SETUP="skip"
+        return
+        ;;
+      2)
+        XROBOT_SETUP="sdk"
+        return
+        ;;
+      3)
+        XROBOT_SETUP="service"
+        return
+        ;;
+      4)
+        XROBOT_SETUP="all"
         return
         ;;
       *)
@@ -277,9 +320,192 @@ install_selected_torch() {
   verify_torch
 }
 
+clone_if_missing() {
+  local repo_url="$1"
+  local target_dir="$2"
+  if [ -d "${target_dir}/.git" ]; then
+    log "repository already exists: ${target_dir}"
+    return
+  fi
+  log "cloning ${repo_url} -> ${target_dir}"
+  git clone "${repo_url}" "${target_dir}"
+}
+
+ensure_xrobot_service_repo() {
+  local service_repo="$1"
+  local workspace
+  workspace="$(dirname "${service_repo}")"
+
+  mkdir -p "${workspace}"
+  clone_if_missing "https://github.com/XR-Robotics/XRoboToolkit-PC-Service.git" "${service_repo}"
+}
+
+install_xrobot_python_sdk() {
+  command -v git >/dev/null 2>&1 || die "git not found; install git before XRobot SDK setup."
+
+  local workspace="workspace/xrobot_toolkit"
+  local service_repo="${workspace}/XRoboToolkit-PC-Service"
+  local pybind_repo="${workspace}/XRoboToolkit-PC-Service-Pybind"
+
+  mkdir -p "${workspace}"
+  ensure_xrobot_service_repo "${service_repo}"
+  clone_if_missing "https://github.com/Axellwppr/XRoboToolkit-PC-Service-Pybind" "${pybind_repo}"
+
+  local sdk_dir="${service_repo}/RoboticsService/PXREARobotSDK"
+  log "building XRoboToolkit PXREARobotSDK"
+  (cd "${sdk_dir}" && bash build.sh)
+
+  log "copying XRoboToolkit C++ SDK artifacts into Python binding project"
+  mkdir -p "${pybind_repo}/lib" "${pybind_repo}/include/nlohmann"
+  cp "${sdk_dir}/PXREARobotSDK.h" "${pybind_repo}/include/"
+  cp -a "${sdk_dir}/nlohmann/." "${pybind_repo}/include/nlohmann/"
+  cp "${sdk_dir}/build/libPXREARobotSDK.so" "${pybind_repo}/lib/"
+
+  log "installing xrobotoolkit_sdk into current uv environment"
+  uv pip install "${pybind_repo}"
+
+  uv run --no-sync python - <<'PY'
+import xrobotoolkit_sdk as xrt
+print("[setup_env] xrobotoolkit_sdk import ok")
+print("[setup_env] init:", hasattr(xrt, "init"))
+print("[setup_env] callback:", hasattr(xrt, "register_frame_callback"))
+print("[setup_env] polling:", hasattr(xrt, "is_body_data_available"))
+PY
+}
+
+install_xrobot_pc_service_from_source() {
+  command -v git >/dev/null 2>&1 || die "git not found; install git before XRoboToolkit PC Service source setup."
+
+  local service_repo="workspace/xrobot_toolkit/XRoboToolkit-PC-Service"
+  ensure_xrobot_service_repo "${service_repo}"
+
+  local build_script="${service_repo}/RoboticsService/qt-gcc.sh"
+  local bin_dir="${service_repo}/RoboticsService/bin"
+  if [ ! -f "${build_script}" ]; then
+    die "XRoboToolkit PC Service build script not found: ${build_script}"
+  fi
+
+  log "building XRoboToolkit PC Service from source"
+  log "source path: ${service_repo}"
+  if ! (cd "${service_repo}" && bash RoboticsService/qt-gcc.sh); then
+    cat >&2 <<'EOF'
+[setup_env] ERROR: XRoboToolkit PC Service source build failed.
+
+This build depends on Qt. Install the Qt version expected by XRoboToolkit
+PC Service on this machine, then rerun setup_env.sh.
+EOF
+    exit 2
+  fi
+
+  if [ ! -x "${bin_dir}/RoboticsServiceProcess" ]; then
+    die "XRoboToolkit PC Service build finished, but RoboticsServiceProcess was not found in ${bin_dir}"
+  fi
+
+  log "installing source-built XRoboToolkit PC Service to /opt/apps/roboticsservice"
+  sudo mkdir -p /opt/apps/roboticsservice
+  sudo cp -a "${bin_dir}/." /opt/apps/roboticsservice/
+  sudo tee /opt/apps/roboticsservice/runService.sh >/dev/null <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+export LD_LIBRARY_PATH="${APP_DIR}:${APP_DIR}/lib:${APP_DIR}/SDK/x64:${APP_DIR}/SDK/linux/64:${APP_DIR}/SDK/linux_aarch64/64:${LD_LIBRARY_PATH:-}"
+export QT_PLUGIN_PATH="${APP_DIR}/plugins:${QT_PLUGIN_PATH:-}"
+export QML2_IMPORT_PATH="${APP_DIR}/qml:${QML2_IMPORT_PATH:-}"
+
+cd "${APP_DIR}"
+"${APP_DIR}/RoboticsServiceProcess" "$@" &
+EOF
+  sudo chmod +x /opt/apps/roboticsservice/runService.sh
+  log "XRoboToolkit PC Service source install complete: /opt/apps/roboticsservice/runService.sh"
+}
+
+install_xrobot_pc_service() {
+  if ! command -v dpkg >/dev/null 2>&1; then
+    log "dpkg not found; falling back to XRoboToolkit PC Service source build"
+    install_xrobot_pc_service_from_source
+    return
+  fi
+
+  local arch
+  arch="$(dpkg --print-architecture)"
+
+  if [ -x "/opt/apps/roboticsservice/runService.sh" ] && [ "${FORCE_XROBOT_SERVICE_INSTALL}" != "1" ]; then
+    log "XRoboToolkit PC Service already appears installed; set KITOV_FORCE_XROBOT_SERVICE_INSTALL=1 to reinstall"
+    return
+  fi
+
+  if [ ! -r /etc/os-release ]; then
+    log "cannot detect Ubuntu version because /etc/os-release is not readable; falling back to source build"
+    install_xrobot_pc_service_from_source
+    return
+  fi
+
+  local deb_path=""
+  if [ "${arch}" = "amd64" ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    case "${VERSION_ID:-}" in
+      20.04)
+        deb_path="packages/xrobotoolkit_pc_service/XRoboToolkit_PC_Service_1.0.0_ubuntu_20.04_amd64.deb"
+        ;;
+      22.04)
+        deb_path="packages/xrobotoolkit_pc_service/XRoboToolkit_PC_Service_1.0.0_ubuntu_22.04_amd64.deb"
+        ;;
+      *)
+        log "no bundled XRoboToolkit PC Service .deb for Ubuntu VERSION_ID=${VERSION_ID:-unknown}; falling back to source build"
+        ;;
+    esac
+  else
+    log "no bundled XRoboToolkit PC Service .deb for arch=${arch}; falling back to source build"
+  fi
+
+  if [ -z "${deb_path}" ]; then
+    install_xrobot_pc_service_from_source
+    return
+  fi
+
+  if [ ! -f "${deb_path}" ]; then
+    log "XRoboToolkit PC Service package not found: ${deb_path}; falling back to source build"
+    install_xrobot_pc_service_from_source
+    return
+  fi
+
+  log "installing XRoboToolkit PC Service package: ${deb_path}"
+  if ! sudo dpkg -i "${deb_path}"; then
+    log "dpkg reported missing dependencies; running sudo apt-get install -f -y"
+    sudo apt-get install -f -y
+    sudo dpkg -i "${deb_path}"
+  fi
+}
+
+install_selected_xrobot() {
+  case "${XROBOT_SETUP}" in
+    skip)
+      log "skipping XRobot SDK / PC Service setup"
+      ;;
+    sdk)
+      install_xrobot_python_sdk
+      ;;
+    service)
+      install_xrobot_pc_service
+      ;;
+    all)
+      install_xrobot_python_sdk
+      install_xrobot_pc_service
+      ;;
+    *)
+      die "unknown KITOV_XROBOT_SETUP=${XROBOT_SETUP}. Use skip, sdk, service, or all."
+      ;;
+  esac
+}
+
 command -v uv >/dev/null 2>&1 || die "uv not found. Install uv first: curl -LsSf https://astral.sh/uv/install.sh | sh"
 choose_install_target "$@"
 log "install target=${INSTALL_TARGET}"
+choose_xrobot_setup
+log "xrobot setup=${XROBOT_SETUP}"
 
 if [ -d ".venv" ]; then
   if [ "${RECREATE_VENV}" = "1" ]; then
@@ -314,5 +540,7 @@ case "${INSTALL_TARGET}" in
     die "unknown install target=${INSTALL_TARGET}. Use all, onnxruntime, torch, or skip."
     ;;
 esac
+
+install_selected_xrobot
 
 log "done"

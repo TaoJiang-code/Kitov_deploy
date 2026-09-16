@@ -165,13 +165,27 @@ Menu choices:
 4) skip         uv sync only
 ```
 
-For non-interactive setup, use `KITOV_INSTALL_TARGET`:
+The script then asks for XRobot setup:
+
+```text
+1) skip        do not install XRobot SDK or PC Service
+2) sdk         build/install xrobotoolkit_sdk into this .venv
+3) service     install XRoboToolkit PC Service from .deb or source
+4) all         SDK + PC Service
+```
+
+For non-interactive setup, use environment variables. If you only want the
+Python runtime dependencies, skip XRobot setup explicitly:
 
 ```bash
-KITOV_INSTALL_TARGET=onnxruntime scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=torch scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=all scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=onnxruntime KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=torch KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=all KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
+
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=sdk scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=all scripts/tool/setup_env.sh
 ```
 
 The default `KITOV_ONNXRUNTIME_MODE=auto` installs the regular CPU ONNX Runtime
@@ -252,40 +266,21 @@ PY
 `xrobotoolkit_sdk` must be installed inside the current `.venv`. An SDK
 installed in the old conda environment is not visible from the uv environment.
 
-On a new machine, prepare both repositories inside
-`workspace/xrobot_toolkit/` under the repository root. This directory is ignored
-by Git. Run each block below from the Kitov_deploy repository root:
+Use the setup script and choose `sdk` or `all` in the second menu:
 
 ```bash
-mkdir -p workspace/xrobot_toolkit
-cd workspace/xrobot_toolkit
-
-git clone https://github.com/Axellwppr/XRoboToolkit-PC-Service-Pybind
-git clone https://github.com/XR-Robotics/XRoboToolkit-PC-Service.git
+scripts/tool/setup_env.sh
 ```
 
-Build the XRoboToolkit C++ SDK:
+The script uses `workspace/xrobot_toolkit/`, which is ignored by Git. It clones
+the pybind and PC Service repositories, builds `PXREARobotSDK`, copies the
+header/library artifacts into the pybind project, and installs the binding into
+the current uv environment.
+
+Non-interactive SDK-only setup:
 
 ```bash
-cd workspace/xrobot_toolkit/XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK
-bash build.sh
-```
-
-Copy the C++ SDK artifacts into the Python binding project:
-
-```bash
-cd workspace/xrobot_toolkit/XRoboToolkit-PC-Service-Pybind
-mkdir -p lib include
-
-cp ../XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK/PXREARobotSDK.h include/
-cp -r ../XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK/nlohmann include/nlohmann/
-cp ../XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK/build/libPXREARobotSDK.so lib/
-```
-
-Install the binding into the Kitov_deploy uv environment:
-
-```bash
-uv pip install workspace/xrobot_toolkit/XRoboToolkit-PC-Service-Pybind
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=sdk scripts/tool/setup_env.sh
 ```
 
 Verify it with:
@@ -310,23 +305,34 @@ packages/xrobotoolkit_pc_service/
   XRoboToolkit_PC_Service_1.0.0_ubuntu_22.04_amd64.deb
 ```
 
-Install the package that matches the host Ubuntu version. On this machine
-(`Ubuntu 20.04.6`), use:
+Use the setup script and choose `service` or `all` in the second menu:
 
 ```bash
-sudo dpkg -i packages/xrobotoolkit_pc_service/XRoboToolkit_PC_Service_1.0.0_ubuntu_20.04_amd64.deb
+scripts/tool/setup_env.sh
 ```
 
-For Ubuntu 22.04, install the 22.04 package instead:
+The script first checks whether a bundled `.deb` matches this system. The
+current repository packages cover Ubuntu `20.04` / `22.04` on `amd64`. If one
+matches, the script installs it and runs `sudo apt-get install -f -y` if `dpkg`
+reports missing dependencies.
+
+If no bundled `.deb` matches, for example on Jetson `aarch64`, the script falls
+back to source install. It clones/reuses
+`workspace/xrobot_toolkit/XRoboToolkit-PC-Service`, runs
+`RoboticsService/qt-gcc.sh`, then installs `RoboticsService/bin` into
+`/opt/apps/roboticsservice`. Source builds require Qt; if the required Qt setup
+is missing, the build step fails and should be rerun after installing Qt.
+
+Non-interactive service-only setup:
 
 ```bash
-sudo dpkg -i packages/xrobotoolkit_pc_service/XRoboToolkit_PC_Service_1.0.0_ubuntu_22.04_amd64.deb
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
 ```
 
-If `dpkg` reports missing system dependencies:
+Force reinstall:
 
 ```bash
-sudo apt-get install -f
+KITOV_FORCE_XROBOT_SERVICE_INSTALL=1 KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
 ```
 
 Start the service:
@@ -829,8 +835,17 @@ BUMI RGMT real-hardware entrypoint through the Noetix SDK:
 scripts/run_bumi_policy_real.sh
 ```
 
-This launcher connects to `third_party/noetix_sdk_bumi` and sends motor
-commands. It starts in damping mode:
+This launcher first checks whether `RoboticsServiceProcess` is running. If it is
+not running, it starts `/opt/apps/roboticsservice/runService.sh`. If the launcher
+started the service, `Ctrl+C` stops the control process and then stops that
+XRoboToolkit PC Service instance. To keep the service running after exit:
+
+```bash
+KITOV_STOP_ROBOTICS_SERVICE_ON_EXIT=0 scripts/run_bumi_policy_real.sh
+```
+
+The launcher connects to `third_party/noetix_sdk_bumi` and sends motor commands.
+It starts in damping mode:
 
 ```text
 p / P: return to damping

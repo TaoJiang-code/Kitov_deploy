@@ -159,13 +159,26 @@ scripts/tool/setup_env.sh
 4) skip         只 uv sync，不额外装 ORT/PyTorch
 ```
 
-非交互场景可以用环境变量：
+随后脚本还会询问 XRobot 相关安装：
+
+```text
+1) skip        不安装 XRobot SDK / PC Service
+2) sdk         编译并安装 xrobotoolkit_sdk 到当前 .venv
+3) service     安装 XRoboToolkit PC Service，优先 deb，不匹配则源码编译
+4) all         SDK + PC Service
+```
+
+非交互场景可以用环境变量。只想处理 Python 运行时依赖时，把 XRobot 步骤设为 `skip`：
 
 ```bash
-KITOV_INSTALL_TARGET=onnxruntime scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=torch scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=all scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=onnxruntime KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=torch KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=all KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
+
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=sdk scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=all scripts/tool/setup_env.sh
 ```
 
 默认 `KITOV_ONNXRUNTIME_MODE=auto`。x86 会装普通 CPU ONNX Runtime；Jetson
@@ -244,39 +257,26 @@ PY
 `xrobotoolkit_sdk` 必须安装在当前 `.venv` 里。之前装在 conda 环境里的 SDK 不会自动进入
 uv 环境。
 
-新设备上先在仓库主目录的 `workspace/xrobot_toolkit/` 里准备两个仓库。这个目录已加入
-`.gitignore`，不会提交到仓库。下面每个代码块都默认从 Kitov_deploy 仓库主目录执行：
+推荐直接通过环境脚本安装，选择第二个菜单里的 `sdk` 或 `all`：
 
 ```bash
-mkdir -p workspace/xrobot_toolkit
-cd workspace/xrobot_toolkit
-
-git clone https://github.com/Axellwppr/XRoboToolkit-PC-Service-Pybind
-git clone https://github.com/XR-Robotics/XRoboToolkit-PC-Service.git
+scripts/tool/setup_env.sh
 ```
 
-编译 XRoboToolkit C++ SDK：
+脚本会把临时仓库放在 `workspace/xrobot_toolkit/`，这个目录已加入 `.gitignore`。它会自动：
 
-```bash
-cd workspace/xrobot_toolkit/XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK
-bash build.sh
-```
-
-把 C++ SDK 产物放进 Python binding 项目：
-
-```bash
-cd workspace/xrobot_toolkit/XRoboToolkit-PC-Service-Pybind
-mkdir -p lib include
-
-cp ../XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK/PXREARobotSDK.h include/
-cp -r ../XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK/nlohmann include/nlohmann/
-cp ../XRoboToolkit-PC-Service/RoboticsService/PXREARobotSDK/build/libPXREARobotSDK.so lib/
-```
-
-安装到 Kitov_deploy 的 uv 环境：
-
-```bash
+```text
+clone XRoboToolkit-PC-Service-Pybind
+clone XRoboToolkit-PC-Service
+build RoboticsService/PXREARobotSDK
+复制 PXREARobotSDK.h / nlohmann / libPXREARobotSDK.so 到 pybind 项目
 uv pip install workspace/xrobot_toolkit/XRoboToolkit-PC-Service-Pybind
+```
+
+非交互安装只装 SDK：
+
+```bash
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=sdk scripts/tool/setup_env.sh
 ```
 
 验证方式：
@@ -301,22 +301,32 @@ packages/xrobotoolkit_pc_service/
   XRoboToolkit_PC_Service_1.0.0_ubuntu_22.04_amd64.deb
 ```
 
-根据系统版本安装对应包。本机是 `Ubuntu 20.04.6`，使用：
+推荐通过环境脚本自动安装，选择第二个菜单里的 `service` 或 `all`：
 
 ```bash
-sudo dpkg -i packages/xrobotoolkit_pc_service/XRoboToolkit_PC_Service_1.0.0_ubuntu_20.04_amd64.deb
+scripts/tool/setup_env.sh
 ```
 
-如果是在 Ubuntu 22.04 机器上，安装 22.04 包：
+脚本会优先检测是否有匹配当前系统的 `.deb`。仓库里现有包覆盖 `amd64` 的 Ubuntu
+`20.04` / `22.04`；如果匹配成功就安装 `.deb`，并在 `dpkg` 提示依赖缺失时自动执行
+`sudo apt-get install -f -y` 后重试。
+
+如果没有匹配 `.deb`，例如 Jetson `aarch64`，脚本会自动走源码安装：在
+`workspace/xrobot_toolkit/XRoboToolkit-PC-Service` 下 clone/复用源码，执行
+`RoboticsService/qt-gcc.sh` 编译，然后把 `RoboticsService/bin` 安装到
+`/opt/apps/roboticsservice`。源码编译依赖 Qt；如果当前机器没有 XRoboToolkit 需要的 Qt，
+脚本会在编译阶段报错，需要先装 Qt 后重跑。
+
+非交互安装只装 PC Service：
 
 ```bash
-sudo dpkg -i packages/xrobotoolkit_pc_service/XRoboToolkit_PC_Service_1.0.0_ubuntu_22.04_amd64.deb
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
 ```
 
-如果 `dpkg` 提示系统依赖缺失：
+如果已经安装过但需要强制重装：
 
 ```bash
-sudo apt-get install -f
+KITOV_FORCE_XROBOT_SERVICE_INSTALL=1 KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
 ```
 
 启动服务：
@@ -786,8 +796,16 @@ BUMI RGMT 实机入口使用 Noetix SDK：
 scripts/run_bumi_policy_real.sh
 ```
 
-这个脚本默认会连接 `third_party/noetix_sdk_bumi`，并发送电机命令。启动后默认是
-damping 阻尼状态：
+这个脚本会先检查 `RoboticsServiceProcess` 是否已经运行；如果没有，会自动执行
+`/opt/apps/roboticsservice/runService.sh`。如果服务是本脚本启动的，`Ctrl+C` 退出时会先停止
+控制程序，再关闭本次启动的 XRoboToolkit PC Service。需要保留服务不关时：
+
+```bash
+KITOV_STOP_ROBOTICS_SERVICE_ON_EXIT=0 scripts/run_bumi_policy_real.sh
+```
+
+脚本默认会连接 `third_party/noetix_sdk_bumi`，并发送电机命令。启动后默认是 damping
+阻尼状态：
 
 ```text
 p / P: 回到 damping
