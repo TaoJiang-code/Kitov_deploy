@@ -58,18 +58,14 @@ ensure_xrobot_service() {
 
 ensure_xrobot_service
 
+set +e
 uv run python scripts/xrobot_bumi_rgmt_policy_real.py \
   --model-dir "${MODEL_DIR}" \
   --hz "${HZ}" \
   --offset-to-ground \
   --quiet-gmr \
   --send \
-  "$@" &
-
-PY_PID=$!
-set +e
-wait "${PY_PID}"
+  "$@"
 PY_STATUS=$?
 set -e
-PY_PID=""
 exit "${PY_STATUS}"

@@ -233,6 +233,8 @@ def main() -> int:
 
     try:
         with _TerminalKeyPoller() as key_poller:
+            if not key_poller.enabled:
+                print("[xrobot_bumi_rgmt_policy_real] stdin is not a TTY; keyboard control is disabled")
             while not stop:
                 key = key_poller.poll()
                 if key in ("p", "P"):
