@@ -17,6 +17,7 @@ JETSON_ONNXRUNTIME_VERSION="${KITOV_JETSON_ONNXRUNTIME_VERSION:-1.23.0}"
 XROBOT_PROTOBUF_VERSION="${KITOV_XROBOT_PROTOBUF_VERSION:-27.2}"
 XROBOT_ABSEIL_VERSION="${KITOV_XROBOT_ABSEIL_VERSION:-20240116.2}"
 XROBOT_GRPC_VERSION="${KITOV_XROBOT_GRPC_VERSION:-1.64.0}"
+XROBOT_SERVICE_REF="${KITOV_XROBOT_SERVICE_REF:-}"
 
 log() {
   printf '[setup_env] %s\n' "$*"
@@ -326,21 +327,60 @@ install_selected_torch() {
 clone_if_missing() {
   local repo_url="$1"
   local target_dir="$2"
+  local ref="${3:-}"
   if [ -d "${target_dir}/.git" ]; then
     log "repository already exists: ${target_dir}"
+    if [ -n "${ref}" ]; then
+      log "checking out ${ref} in ${target_dir}"
+      git -C "${target_dir}" fetch origin "${ref}" >/dev/null 2>&1 || true
+      git -C "${target_dir}" checkout "${ref}"
+    fi
     return
   fi
-  log "cloning ${repo_url} -> ${target_dir}"
-  git clone "${repo_url}" "${target_dir}"
+  if [ -n "${ref}" ]; then
+    log "cloning ${repo_url} (${ref}) -> ${target_dir}"
+    git clone --branch "${ref}" "${repo_url}" "${target_dir}"
+  else
+    log "cloning ${repo_url} -> ${target_dir}"
+    git clone "${repo_url}" "${target_dir}"
+  fi
+}
+
+xrobot_service_ref() {
+  if [ -n "${XROBOT_SERVICE_REF}" ]; then
+    printf '%s\n' "${XROBOT_SERVICE_REF}"
+    return
+  fi
+  case "$(uname -m)" in
+    aarch64)
+      printf 'orin\n'
+      ;;
+    *)
+      printf 'main\n'
+      ;;
+  esac
+}
+
+xrobot_service_repo_path() {
+  case "$(uname -m)" in
+    aarch64)
+      printf 'workspace/xrobot_toolkit/XRoboToolkit-PC-Service-orin\n'
+      ;;
+    *)
+      printf 'workspace/xrobot_toolkit/XRoboToolkit-PC-Service\n'
+      ;;
+  esac
 }
 
 ensure_xrobot_service_repo() {
   local service_repo="$1"
   local workspace
+  local ref
   workspace="$(dirname "${service_repo}")"
+  ref="$(xrobot_service_ref)"
 
   mkdir -p "${workspace}"
-  clone_if_missing "https://github.com/XR-Robotics/XRoboToolkit-PC-Service.git" "${service_repo}"
+  clone_if_missing "https://github.com/XR-Robotics/XRoboToolkit-PC-Service.git" "${service_repo}" "${ref}"
 }
 
 download_file() {
@@ -361,6 +401,11 @@ ensure_xrobot_aarch64_protobuf_headers() {
   local arch
   arch="$(uname -m)"
   if [ "${arch}" != "aarch64" ]; then
+    return
+  fi
+
+  local pb_header="${service_repo}/RoboticsService/PXREAService/linux_aarch64/PXREAService.pb.h"
+  if [ -f "${pb_header}" ] && ! grep -q "google/protobuf/runtime_version.h" "${pb_header}"; then
     return
   fi
 
@@ -458,8 +503,9 @@ install_xrobot_python_sdk() {
   command -v git >/dev/null 2>&1 || die "git not found; install git before XRobot SDK setup."
 
   local workspace="workspace/xrobot_toolkit"
-  local service_repo="${workspace}/XRoboToolkit-PC-Service"
+  local service_repo
   local pybind_repo="${workspace}/XRoboToolkit-PC-Service-Pybind"
+  service_repo="$(xrobot_service_repo_path)"
 
   mkdir -p "${workspace}"
   ensure_xrobot_service_repo "${service_repo}"
@@ -491,11 +537,15 @@ PY
 install_xrobot_pc_service_from_source() {
   command -v git >/dev/null 2>&1 || die "git not found; install git before XRoboToolkit PC Service source setup."
 
-  local service_repo="workspace/xrobot_toolkit/XRoboToolkit-PC-Service"
+  local service_repo
+  service_repo="$(xrobot_service_repo_path)"
   ensure_xrobot_service_repo "${service_repo}"
   ensure_xrobot_aarch64_protobuf_headers "${service_repo}"
 
   local build_script="${service_repo}/RoboticsService/qt-gcc.sh"
+  if [ "$(uname -m)" = "aarch64" ] && [ -f "${service_repo}/RoboticsService/qt-gcc_aarch64.sh" ]; then
+    build_script="${service_repo}/RoboticsService/qt-gcc_aarch64.sh"
+  fi
   local bin_dir="${service_repo}/RoboticsService/bin"
   if [ ! -f "${build_script}" ]; then
     die "XRoboToolkit PC Service build script not found: ${build_script}"
@@ -503,7 +553,7 @@ install_xrobot_pc_service_from_source() {
 
   log "building XRoboToolkit PC Service from source"
   log "source path: ${service_repo}"
-  if ! (cd "${service_repo}" && bash RoboticsService/qt-gcc.sh); then
+  if ! (cd "${service_repo}" && bash "${build_script#${service_repo}/}"); then
     cat >&2 <<'EOF'
 [setup_env] ERROR: XRoboToolkit PC Service source build failed.
 

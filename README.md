@@ -277,6 +277,14 @@ the pybind and PC Service repositories, builds `PXREARobotSDK`, copies the
 header/library artifacts into the pybind project, and installs the binding into
 the current uv environment.
 
+Jetson/aarch64 automatically uses the XRoboToolkit-PC-Service `orin` branch in
+`workspace/xrobot_toolkit/XRoboToolkit-PC-Service-orin`, so it does not share the
+x86/main branch working tree. To override the branch or tag:
+
+```bash
+KITOV_XROBOT_SERVICE_REF=<branch-or-tag> KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=sdk scripts/tool/setup_env.sh
+```
+
 On Jetson/aarch64, if XRoboToolkit's bundled grpc include directory is missing
 `google/protobuf/runtime_version.h`, the script downloads protobuf `v27.2` and
 copies the matching C++ headers into the bundled include directory before
