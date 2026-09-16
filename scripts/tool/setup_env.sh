@@ -724,20 +724,31 @@ EOF
   fi
 
   log "installing source-built XRoboToolkit PC Service to /opt/apps/roboticsservice"
+  local qt_root=""
+  if qt_root="$(find_qt6_root)"; then
+    log "embedding Qt runtime path in runService.sh: ${qt_root}"
+  fi
   sudo mkdir -p /opt/apps/roboticsservice
   sudo cp -a "${bin_dir}/." /opt/apps/roboticsservice/
-  sudo tee /opt/apps/roboticsservice/runService.sh >/dev/null <<'EOF'
+  sudo tee /opt/apps/roboticsservice/runService.sh >/dev/null <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+QT_ROOT="${qt_root}"
 
-export LD_LIBRARY_PATH="${APP_DIR}:${APP_DIR}/lib:${APP_DIR}/SDK/x64:${APP_DIR}/SDK/linux/64:${APP_DIR}/SDK/linux_aarch64/64:${LD_LIBRARY_PATH:-}"
-export QT_PLUGIN_PATH="${APP_DIR}/plugins:${QT_PLUGIN_PATH:-}"
-export QML2_IMPORT_PATH="${APP_DIR}/qml:${QML2_IMPORT_PATH:-}"
+if [ -n "\${QT_ROOT}" ]; then
+  export LD_LIBRARY_PATH="\${QT_ROOT}/lib:\${APP_DIR}:\${APP_DIR}/lib:\${APP_DIR}/SDK/x64:\${APP_DIR}/SDK/linux/64:\${APP_DIR}/SDK/linux_aarch64/64:\${LD_LIBRARY_PATH:-}"
+  export QT_PLUGIN_PATH="\${QT_ROOT}/plugins:\${APP_DIR}/plugins:\${QT_PLUGIN_PATH:-}"
+  export QML2_IMPORT_PATH="\${QT_ROOT}/qml:\${APP_DIR}/qml:\${QML2_IMPORT_PATH:-}"
+else
+  export LD_LIBRARY_PATH="\${APP_DIR}:\${APP_DIR}/lib:\${APP_DIR}/SDK/x64:\${APP_DIR}/SDK/linux/64:\${APP_DIR}/SDK/linux_aarch64/64:\${LD_LIBRARY_PATH:-}"
+  export QT_PLUGIN_PATH="\${APP_DIR}/plugins:\${QT_PLUGIN_PATH:-}"
+  export QML2_IMPORT_PATH="\${APP_DIR}/qml:\${QML2_IMPORT_PATH:-}"
+fi
 
-cd "${APP_DIR}"
-"${APP_DIR}/RoboticsServiceProcess" "$@" &
+cd "\${APP_DIR}"
+"\${APP_DIR}/RoboticsServiceProcess" "\$@" &
 EOF
   sudo chmod +x /opt/apps/roboticsservice/runService.sh
   log "XRoboToolkit PC Service source install complete: /opt/apps/roboticsservice/runService.sh"

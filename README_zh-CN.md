@@ -362,6 +362,10 @@ KITOV_QT_HOST=linux_arm64 KITOV_QT_VERSION=6.7.3 KITOV_QT_ARCH=linux_gcc_arm64 K
 KITOV_XROBOT_SERVICE_CLEAN_BUILD=0 KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
 ```
 
+源码安装生成的 `/opt/apps/roboticsservice/runService.sh` 会写入当前 Qt 路径，并把
+`$KITOV_QT_ROOT/lib` 加到 `LD_LIBRARY_PATH`，否则 Jetson 上可能找不到
+`libicuuc.so.73` 这类 Qt 附带动态库。
+
 非交互安装只装 PC Service：
 
 ```bash

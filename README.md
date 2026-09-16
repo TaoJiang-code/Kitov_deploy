@@ -371,6 +371,11 @@ CMake cache. To disable that:
 KITOV_XROBOT_SERVICE_CLEAN_BUILD=0 KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
 ```
 
+The source install writes the detected Qt path into
+`/opt/apps/roboticsservice/runService.sh` and prepends `$KITOV_QT_ROOT/lib` to
+`LD_LIBRARY_PATH`; otherwise Jetson may fail to find Qt runtime libraries such as
+`libicuuc.so.73`.
+
 Non-interactive service-only setup:
 
 ```bash
