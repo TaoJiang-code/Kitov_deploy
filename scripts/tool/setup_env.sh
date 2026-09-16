@@ -25,6 +25,7 @@ XROBOT_QT_ARCH="${KITOV_QT_ARCH:-}"
 XROBOT_QT_INSTALL_ROOT="${KITOV_QT_INSTALL_ROOT:-${HOME}/Qt}"
 XROBOT_QT_INSTALL_TIMEOUT="${KITOV_QT_INSTALL_TIMEOUT:-120}"
 XROBOT_QT_MODULES="${KITOV_QT_MODULES:-qt5compat qtshadertools qtwebsockets qtmultimedia qtpositioning qtwebchannel qtwebengine qtquick3d qtquicktimeline qt3d qtcharts qtvirtualkeyboard}"
+XROBOT_SERVICE_CLEAN_BUILD="${KITOV_XROBOT_SERVICE_CLEAN_BUILD:-1}"
 
 log() {
   printf '[setup_env] %s\n' "$*"
@@ -704,7 +705,11 @@ install_xrobot_pc_service_from_source() {
 
   log "building XRoboToolkit PC Service from source"
   log "source path: ${service_repo}"
-  if ! (cd "${service_repo}" && bash "${build_script#${service_repo}/}"); then
+  local build_args=()
+  if [ "${XROBOT_SERVICE_CLEAN_BUILD}" = "1" ]; then
+    build_args+=(--clean)
+  fi
+  if ! (cd "${service_repo}" && bash "${build_script#${service_repo}/}" "${build_args[@]}"); then
     cat >&2 <<'EOF'
 [setup_env] ERROR: XRoboToolkit PC Service source build failed.
 

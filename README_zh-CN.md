@@ -356,6 +356,12 @@ KITOV_QT_HOST=linux_arm64 KITOV_QT_VERSION=6.7.3 KITOV_QT_ARCH=linux_gcc_arm64 K
   KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
 ```
 
+源码编译 PC Service 时默认会带 `--clean`，避免复用上一次失败的 CMake cache。需要关闭时：
+
+```bash
+KITOV_XROBOT_SERVICE_CLEAN_BUILD=0 KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
+```
+
 非交互安装只装 PC Service：
 
 ```bash

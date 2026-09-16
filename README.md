@@ -364,6 +364,13 @@ KITOV_QT_HOST=linux_arm64 KITOV_QT_VERSION=6.7.3 KITOV_QT_ARCH=linux_gcc_arm64 K
   KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
 ```
 
+PC Service source builds pass `--clean` by default to avoid reusing a failed
+CMake cache. To disable that:
+
+```bash
+KITOV_XROBOT_SERVICE_CLEAN_BUILD=0 KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
+```
+
 Non-interactive service-only setup:
 
 ```bash
