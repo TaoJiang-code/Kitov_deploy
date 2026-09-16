@@ -20,7 +20,8 @@ XROBOT_GRPC_VERSION="${KITOV_XROBOT_GRPC_VERSION:-1.64.0}"
 XROBOT_SERVICE_REF="${KITOV_XROBOT_SERVICE_REF:-}"
 XROBOT_QT_ROOT="${KITOV_QT_ROOT:-}"
 XROBOT_QT_VERSION="${KITOV_QT_VERSION:-6.7.3}"
-XROBOT_QT_ARCH="${KITOV_QT_ARCH:-gcc_arm64}"
+XROBOT_QT_HOST="${KITOV_QT_HOST:-}"
+XROBOT_QT_ARCH="${KITOV_QT_ARCH:-}"
 XROBOT_QT_INSTALL_ROOT="${KITOV_QT_INSTALL_ROOT:-${HOME}/Qt}"
 XROBOT_QT_INSTALL_TIMEOUT="${KITOV_QT_INSTALL_TIMEOUT:-120}"
 XROBOT_QT_MODULES="${KITOV_QT_MODULES:-qt5compat qtshadertools qtwebsockets qtmultimedia qtpositioning qtwebchannel qtwebengine qtquick3d qtquicktimeline qt3d qtcharts qtvirtualkeyboard}"
@@ -378,6 +379,36 @@ xrobot_service_repo_path() {
   esac
 }
 
+qt_host() {
+  if [ -n "${XROBOT_QT_HOST}" ]; then
+    printf '%s\n' "${XROBOT_QT_HOST}"
+    return
+  fi
+  case "$(uname -m)" in
+    aarch64)
+      printf 'linux_arm64\n'
+      ;;
+    *)
+      printf 'linux\n'
+      ;;
+  esac
+}
+
+qt_arch() {
+  if [ -n "${XROBOT_QT_ARCH}" ]; then
+    printf '%s\n' "${XROBOT_QT_ARCH}"
+    return
+  fi
+  case "$(uname -m)" in
+    aarch64)
+      printf 'linux_gcc_arm64\n'
+      ;;
+    *)
+      printf 'gcc_64\n'
+      ;;
+  esac
+}
+
 ensure_xrobot_service_repo() {
   local service_repo="$1"
   local workspace
@@ -507,13 +538,20 @@ ensure_xrobot_aarch64_protobuf_headers() {
 
 find_qt6_root() {
   local candidate
+  local arch
+  arch="$(qt_arch)"
   for candidate in \
     "${XROBOT_QT_ROOT}" \
-    "${XROBOT_QT_INSTALL_ROOT}/${XROBOT_QT_VERSION}/${XROBOT_QT_ARCH}" \
-    "${HOME}/Qt/${XROBOT_QT_VERSION}/${XROBOT_QT_ARCH}" \
-    "${HOME}/Qt6/${XROBOT_QT_VERSION}/${XROBOT_QT_ARCH}" \
-    "/home/orin_pico/Qt/${XROBOT_QT_VERSION}/${XROBOT_QT_ARCH}" \
-    "/opt/Qt/${XROBOT_QT_VERSION}/${XROBOT_QT_ARCH}" \
+    "${XROBOT_QT_INSTALL_ROOT}/${XROBOT_QT_VERSION}/${arch}" \
+    "${XROBOT_QT_INSTALL_ROOT}/${XROBOT_QT_VERSION}/gcc_arm64" \
+    "${HOME}/Qt/${XROBOT_QT_VERSION}/${arch}" \
+    "${HOME}/Qt/${XROBOT_QT_VERSION}/gcc_arm64" \
+    "${HOME}/Qt6/${XROBOT_QT_VERSION}/${arch}" \
+    "${HOME}/Qt6/${XROBOT_QT_VERSION}/gcc_arm64" \
+    "/home/orin_pico/Qt/${XROBOT_QT_VERSION}/${arch}" \
+    "/home/orin_pico/Qt/${XROBOT_QT_VERSION}/gcc_arm64" \
+    "/opt/Qt/${XROBOT_QT_VERSION}/${arch}" \
+    "/opt/Qt/${XROBOT_QT_VERSION}/gcc_arm64" \
     "/usr"; do
     if [ -n "${candidate}" ] && [ -f "${candidate}/lib/cmake/Qt6/Qt6Config.cmake" ]; then
       printf '%s\n' "${candidate}"
@@ -528,7 +566,12 @@ install_qt6_aarch64() {
     return
   fi
 
-  log "Qt6 for aarch64 not found; installing Qt ${XROBOT_QT_VERSION} ${XROBOT_QT_ARCH} into ${XROBOT_QT_INSTALL_ROOT}"
+  local host
+  local arch
+  host="$(qt_host)"
+  arch="$(qt_arch)"
+
+  log "Qt6 for aarch64 not found; installing Qt ${XROBOT_QT_VERSION} ${arch} into ${XROBOT_QT_INSTALL_ROOT}"
   log "installing aqtinstall into current uv environment"
   uv pip install aqtinstall
 
@@ -539,12 +582,12 @@ install_qt6_aarch64() {
   fi
 
   if [ "${#modules[@]}" -gt 0 ]; then
-    uv run python -m aqt install-qt linux desktop "${XROBOT_QT_VERSION}" "${XROBOT_QT_ARCH}" \
+    uv run python -m aqt install-qt "${host}" desktop "${XROBOT_QT_VERSION}" "${arch}" \
       -O "${XROBOT_QT_INSTALL_ROOT}" \
       --timeout "${XROBOT_QT_INSTALL_TIMEOUT}" \
       -m "${modules[@]}"
   else
-    uv run python -m aqt install-qt linux desktop "${XROBOT_QT_VERSION}" "${XROBOT_QT_ARCH}" \
+    uv run python -m aqt install-qt "${host}" desktop "${XROBOT_QT_VERSION}" "${arch}" \
       -O "${XROBOT_QT_INSTALL_ROOT}" \
       --timeout "${XROBOT_QT_INSTALL_TIMEOUT}"
   fi
@@ -561,13 +604,15 @@ patch_xrobot_aarch64_qt_script() {
   if ! qt_root="$(find_qt6_root)"; then
     install_qt6_aarch64
     if ! qt_root="$(find_qt6_root)"; then
+      local arch
+      arch="$(qt_arch)"
       cat >&2 <<EOF
 [setup_env] ERROR: Qt6 for aarch64 was not found after automatic install.
 
 XRoboToolkit PC Service on Jetson/aarch64 needs a Qt6 ARM64 installation.
 Install Qt manually, then rerun with:
 
-  KITOV_QT_ROOT=/path/to/Qt/${XROBOT_QT_VERSION}/${XROBOT_QT_ARCH} KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service ./scripts/tool/setup_env.sh
+  KITOV_QT_ROOT=/path/to/Qt/${XROBOT_QT_VERSION}/${arch} KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service ./scripts/tool/setup_env.sh
 
 Expected file:
 
