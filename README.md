@@ -175,12 +175,18 @@ KITOV_INSTALL_TARGET=skip scripts/tool/setup_env.sh
 ```
 
 The default `KITOV_ONNXRUNTIME_MODE=auto` installs the regular CPU ONNX Runtime
-on x86. On Jetson, it tries the JetPack 6 / Python 3.10 `onnxruntime_gpu` wheel.
-For other JetPack/L4T versions, pass a matching wheel:
+on x86. On Jetson, it installs `onnxruntime-gpu==1.23.0` from the Jetson AI Lab
+JetPack 6 / cu126 index. For other JetPack/L4T versions, pass a matching wheel:
 
 ```bash
 KITOV_JETSON_ONNXRUNTIME_WHEEL=/path/to/onnxruntime_gpu-xxx-linux_aarch64.whl \
   KITOV_INSTALL_TARGET=onnxruntime scripts/tool/setup_env.sh
+```
+
+The JetPack 6 default version can also be overridden:
+
+```bash
+KITOV_JETSON_ONNXRUNTIME_VERSION=1.23.0 KITOV_INSTALL_TARGET=onnxruntime scripts/tool/setup_env.sh
 ```
 
 The default `KITOV_TORCH_MODE=auto` checks `nvidia-smi` on x86 and installs a

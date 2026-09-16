@@ -10,7 +10,8 @@ JETSON_TORCH_WHEEL="${KITOV_JETSON_TORCH_WHEEL:-}"
 ONNXRUNTIME_MODE="${KITOV_ONNXRUNTIME_MODE:-auto}"
 JETSON_ONNXRUNTIME_WHEEL="${KITOV_JETSON_ONNXRUNTIME_WHEEL:-}"
 RECREATE_VENV="${KITOV_RECREATE_VENV:-0}"
-JETSON_ONNXRUNTIME_JP6_CU126_WHEEL="https://pypi.jetson-ai-lab.io/jp6/cu126/+f/e1e/9e3dc2f4d5551/onnxruntime_gpu-1.23.0-cp310-cp310-linux_aarch64.whl"
+JETSON_ONNXRUNTIME_JP6_CU126_INDEX="https://pypi.jetson-ai-lab.io/jp6/cu126"
+JETSON_ONNXRUNTIME_VERSION="${KITOV_JETSON_ONNXRUNTIME_VERSION:-1.23.0}"
 
 log() {
   printf '[setup_env] %s\n' "$*"
@@ -107,10 +108,11 @@ install_onnxruntime_cpu() {
 
 install_onnxruntime_jetson_gpu() {
   local wheel="${JETSON_ONNXRUNTIME_WHEEL}"
+  local use_index=0
   if [ -z "${wheel}" ]; then
     if [ -f /etc/nv_tegra_release ] && grep -q "R36" /etc/nv_tegra_release; then
-      wheel="${JETSON_ONNXRUNTIME_JP6_CU126_WHEEL}"
-      log "using default JetPack 6 ONNX Runtime GPU wheel"
+      use_index=1
+      log "using default JetPack 6 ONNX Runtime GPU index: ${JETSON_ONNXRUNTIME_JP6_CU126_INDEX}"
     else
       cat >&2 <<'EOF'
 [setup_env] ERROR: Jetson ONNX Runtime GPU was requested, but no wheel is configured.
@@ -126,10 +128,16 @@ EOF
     fi
   fi
 
-  log "replacing CPU onnxruntime with Jetson GPU wheel"
+  log "replacing CPU onnxruntime with Jetson GPU package"
   uv pip uninstall -y onnxruntime onnxruntime-gpu onnxruntime_gpu >/dev/null 2>&1 || true
-  uv pip install "numpy<2"
-  uv pip install "${wheel}"
+  if [ "${use_index}" = "1" ]; then
+    uv pip install \
+      --index-url "${JETSON_ONNXRUNTIME_JP6_CU126_INDEX}" \
+      "onnxruntime-gpu==${JETSON_ONNXRUNTIME_VERSION}" \
+      "numpy<2"
+  else
+    uv pip install "${wheel}" "numpy<2"
+  fi
 }
 
 install_onnxruntime_auto() {

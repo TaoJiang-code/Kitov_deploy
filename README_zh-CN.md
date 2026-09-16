@@ -169,12 +169,18 @@ KITOV_INSTALL_TARGET=skip scripts/tool/setup_env.sh
 ```
 
 默认 `KITOV_ONNXRUNTIME_MODE=auto`。x86 会装普通 CPU ONNX Runtime；Jetson
-会优先装 JetPack 6 / Python 3.10 的 `onnxruntime_gpu` wheel。如果不是 JetPack 6，
-手动指定匹配当前 JetPack/L4T 的 wheel：
+会优先从 Jetson AI Lab 的 JetPack 6 / cu126 索引安装 `onnxruntime-gpu==1.23.0`。
+如果不是 JetPack 6，手动指定匹配当前 JetPack/L4T 的 wheel：
 
 ```bash
 KITOV_JETSON_ONNXRUNTIME_WHEEL=/path/to/onnxruntime_gpu-xxx-linux_aarch64.whl \
   KITOV_INSTALL_TARGET=onnxruntime scripts/tool/setup_env.sh
+```
+
+JetPack 6 默认版本也可以覆盖：
+
+```bash
+KITOV_JETSON_ONNXRUNTIME_VERSION=1.23.0 KITOV_INSTALL_TARGET=onnxruntime scripts/tool/setup_env.sh
 ```
 
 默认 `KITOV_TORCH_MODE=auto`。x86 机器会检查 `nvidia-smi`，并按驱动支持的
