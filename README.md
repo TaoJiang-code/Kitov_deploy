@@ -150,10 +150,37 @@ real target was not built. Do not use `rl_real_g1` as a substitute.
 
 ## Create uv Environment
 
-Recommended setup command:
+Recommended setup command. Run it and choose from the menu:
 
 ```bash
 scripts/tool/setup_env.sh
+```
+
+Menu choices:
+
+```text
+1) all          ONNX Runtime + PyTorch
+2) onnxruntime  ONNX Runtime only
+3) torch        PyTorch only
+4) skip         uv sync only
+```
+
+For non-interactive setup, use `KITOV_INSTALL_TARGET`:
+
+```bash
+KITOV_INSTALL_TARGET=onnxruntime scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=torch scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=all scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip scripts/tool/setup_env.sh
+```
+
+The default `KITOV_ONNXRUNTIME_MODE=auto` installs the regular CPU ONNX Runtime
+on x86. On Jetson, it tries the JetPack 6 / Python 3.10 `onnxruntime_gpu` wheel.
+For other JetPack/L4T versions, pass a matching wheel:
+
+```bash
+KITOV_JETSON_ONNXRUNTIME_WHEEL=/path/to/onnxruntime_gpu-xxx-linux_aarch64.whl \
+  KITOV_INSTALL_TARGET=onnxruntime scripts/tool/setup_env.sh
 ```
 
 The default `KITOV_TORCH_MODE=auto` checks `nvidia-smi` on x86 and installs a
@@ -162,16 +189,19 @@ Jetson is `aarch64` and cannot use the x86 `cu128/cu126` wheels; pass the
 matching NVIDIA Jetson wheel for that JetPack/L4T version:
 
 ```bash
-KITOV_JETSON_TORCH_WHEEL=/path/to/torch-xxx-linux_aarch64.whl scripts/tool/setup_env.sh
+KITOV_JETSON_TORCH_WHEEL=/path/to/torch-xxx-linux_aarch64.whl \
+  KITOV_INSTALL_TARGET=torch scripts/tool/setup_env.sh
 ```
 
 Manual mode overrides:
 
 ```bash
-KITOV_TORCH_MODE=cu128 scripts/tool/setup_env.sh
-KITOV_TORCH_MODE=cu126 scripts/tool/setup_env.sh
-KITOV_TORCH_MODE=cpu scripts/tool/setup_env.sh
-KITOV_TORCH_MODE=skip scripts/tool/setup_env.sh
+KITOV_ONNXRUNTIME_MODE=cpu KITOV_INSTALL_TARGET=onnxruntime scripts/tool/setup_env.sh
+KITOV_ONNXRUNTIME_MODE=jetson-gpu KITOV_INSTALL_TARGET=onnxruntime scripts/tool/setup_env.sh
+KITOV_TORCH_MODE=cu128 KITOV_INSTALL_TARGET=torch scripts/tool/setup_env.sh
+KITOV_TORCH_MODE=cu126 KITOV_INSTALL_TARGET=torch scripts/tool/setup_env.sh
+KITOV_TORCH_MODE=cpu KITOV_INSTALL_TARGET=torch scripts/tool/setup_env.sh
+KITOV_TORCH_MODE=skip KITOV_INSTALL_TARGET=torch scripts/tool/setup_env.sh
 ```
 
 If `.venv` already exists, the script reuses it by default. To recreate it:

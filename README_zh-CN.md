@@ -144,10 +144,37 @@ target 没有被编译出来，不应该改用 `rl_real_g1` 顶上。
 
 ## 创建 uv 环境
 
-推荐直接用脚本创建 uv 环境并安装 PyTorch：
+推荐直接用脚本创建 uv 环境。直接回车运行后按菜单选择：
 
 ```bash
 scripts/tool/setup_env.sh
+```
+
+菜单含义：
+
+```text
+1) all          ONNX Runtime + PyTorch
+2) onnxruntime  只装/替换 ONNX Runtime
+3) torch        只装 PyTorch
+4) skip         只 uv sync，不额外装 ORT/PyTorch
+```
+
+非交互场景可以用环境变量：
+
+```bash
+KITOV_INSTALL_TARGET=onnxruntime scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=torch scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=all scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip scripts/tool/setup_env.sh
+```
+
+默认 `KITOV_ONNXRUNTIME_MODE=auto`。x86 会装普通 CPU ONNX Runtime；Jetson
+会优先装 JetPack 6 / Python 3.10 的 `onnxruntime_gpu` wheel。如果不是 JetPack 6，
+手动指定匹配当前 JetPack/L4T 的 wheel：
+
+```bash
+KITOV_JETSON_ONNXRUNTIME_WHEEL=/path/to/onnxruntime_gpu-xxx-linux_aarch64.whl \
+  KITOV_INSTALL_TARGET=onnxruntime scripts/tool/setup_env.sh
 ```
 
 默认 `KITOV_TORCH_MODE=auto`。x86 机器会检查 `nvidia-smi`，并按驱动支持的
@@ -155,16 +182,19 @@ CUDA capability 自动选择 `cu128` 或 `cu126` PyTorch wheel。Jetson 是 `aar
 不能使用 x86 的 `cu128/cu126` wheel，需要指定匹配 JetPack/L4T 的 NVIDIA Jetson wheel：
 
 ```bash
-KITOV_JETSON_TORCH_WHEEL=/path/to/torch-xxx-linux_aarch64.whl scripts/tool/setup_env.sh
+KITOV_JETSON_TORCH_WHEEL=/path/to/torch-xxx-linux_aarch64.whl \
+  KITOV_INSTALL_TARGET=torch scripts/tool/setup_env.sh
 ```
 
 也可以手动指定：
 
 ```bash
-KITOV_TORCH_MODE=cu128 scripts/tool/setup_env.sh
-KITOV_TORCH_MODE=cu126 scripts/tool/setup_env.sh
-KITOV_TORCH_MODE=cpu scripts/tool/setup_env.sh
-KITOV_TORCH_MODE=skip scripts/tool/setup_env.sh
+KITOV_ONNXRUNTIME_MODE=cpu KITOV_INSTALL_TARGET=onnxruntime scripts/tool/setup_env.sh
+KITOV_ONNXRUNTIME_MODE=jetson-gpu KITOV_INSTALL_TARGET=onnxruntime scripts/tool/setup_env.sh
+KITOV_TORCH_MODE=cu128 KITOV_INSTALL_TARGET=torch scripts/tool/setup_env.sh
+KITOV_TORCH_MODE=cu126 KITOV_INSTALL_TARGET=torch scripts/tool/setup_env.sh
+KITOV_TORCH_MODE=cpu KITOV_INSTALL_TARGET=torch scripts/tool/setup_env.sh
+KITOV_TORCH_MODE=skip KITOV_INSTALL_TARGET=torch scripts/tool/setup_env.sh
 ```
 
 如果 `.venv` 已存在，脚本默认复用它；需要重建时再显式指定：

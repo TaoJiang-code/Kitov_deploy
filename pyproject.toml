@@ -15,7 +15,6 @@ dependencies = [
   "mink",
   "mujoco",
   "numpy",
-  "onnxruntime",
   "protobuf",
   "pybind11",
   "pyzmq",
@@ -24,6 +23,11 @@ dependencies = [
   "scipy",
   "tqdm",
 ]
+
+[project.optional-dependencies]
+onnxruntime = ["onnxruntime"]
+torch = ["torch"]
+all = ["onnxruntime", "torch"]
 
 [tool.setuptools.packages.find]
 include = ["kitov_deploy*", "ee_body*"]
