@@ -168,17 +168,29 @@ scripts/tool/setup_env.sh
 4) all         SDK + PC Service
 ```
 
+最后脚本会询问 BUMI Noetix SDK 是否编译：
+
+```text
+1) skip        不编译 Noetix BUMI SDK
+2) build       编译 lowcontrol_py/highcontrol_py/mediacontrol_py
+```
+
+如果要跑 `scripts/run_bumi_policy_real.sh`，这一步需要选 `build`，否则实机入口找不到
+`third_party/noetix_sdk_bumi/build/lowcontrol_py*.so`。编译时如果缺少 Eigen3，脚本会自动
+安装 `libeigen3-dev`。
+
 非交互场景可以用环境变量。只想处理 Python 运行时依赖时，把 XRobot 步骤设为 `skip`：
 
 ```bash
-KITOV_INSTALL_TARGET=onnxruntime KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=torch KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=all KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=onnxruntime KITOV_XROBOT_SETUP=skip KITOV_NOETIX_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=torch KITOV_XROBOT_SETUP=skip KITOV_NOETIX_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=all KITOV_XROBOT_SETUP=skip KITOV_NOETIX_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=skip KITOV_NOETIX_SETUP=skip scripts/tool/setup_env.sh
 
-KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=sdk scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=all scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=sdk KITOV_NOETIX_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service KITOV_NOETIX_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=all KITOV_NOETIX_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=skip KITOV_NOETIX_SETUP=build scripts/tool/setup_env.sh
 ```
 
 默认 `KITOV_ONNXRUNTIME_MODE=auto`。x86 会装普通 CPU ONNX Runtime；Jetson

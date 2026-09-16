@@ -26,6 +26,9 @@ XROBOT_QT_INSTALL_ROOT="${KITOV_QT_INSTALL_ROOT:-${HOME}/Qt}"
 XROBOT_QT_INSTALL_TIMEOUT="${KITOV_QT_INSTALL_TIMEOUT:-120}"
 XROBOT_QT_MODULES="${KITOV_QT_MODULES:-qt5compat qtshadertools qtwebsockets qtmultimedia qtpositioning qtwebchannel qtwebengine qtquick3d qtquicktimeline qt3d qtcharts qtvirtualkeyboard}"
 XROBOT_SERVICE_CLEAN_BUILD="${KITOV_XROBOT_SERVICE_CLEAN_BUILD:-1}"
+NOETIX_SETUP="${KITOV_NOETIX_SETUP:-}"
+NOETIX_SDK_DIR="${KITOV_NOETIX_SDK_DIR:-third_party/noetix_sdk_bumi}"
+BUILD_JOBS="${KITOV_BUILD_JOBS:-$(nproc)}"
 
 log() {
   printf '[setup_env] %s\n' "$*"
@@ -116,6 +119,37 @@ EOF
         ;;
       4)
         XROBOT_SETUP="all"
+        return
+        ;;
+      *)
+        printf '[setup_env] invalid choice: %s\n' "${choice}" >&2
+        ;;
+    esac
+  done
+}
+
+choose_noetix_setup() {
+  if [ -n "${NOETIX_SETUP}" ]; then
+    return
+  fi
+
+  cat <<'EOF'
+[setup_env] Select BUMI Noetix SDK setup:
+  1) skip        do not build Noetix BUMI SDK
+  2) build       build lowcontrol_py/highcontrol_py/mediacontrol_py
+EOF
+
+  local choice
+  while true; do
+    printf '[setup_env] choice [1-2]: '
+    read -r choice
+    case "${choice}" in
+      1)
+        NOETIX_SETUP="skip"
+        return
+        ;;
+      2)
+        NOETIX_SETUP="build"
         return
         ;;
       *)
@@ -834,11 +868,83 @@ install_selected_xrobot() {
   esac
 }
 
+ensure_noetix_onnxruntime_cmake_shim() {
+  local shim_dir="workspace/deps/onnxruntime-cmake"
+  mkdir -p "${shim_dir}"
+  cat >"${shim_dir}/onnxruntimeConfig.cmake" <<'EOF'
+add_library(onnxruntime INTERFACE IMPORTED)
+set(onnxruntime_FOUND TRUE)
+EOF
+  printf '%s\n' "${shim_dir}"
+}
+
+build_noetix_bumi_sdk() {
+  if [ ! -d "${NOETIX_SDK_DIR}" ]; then
+    die "Noetix SDK directory not found: ${NOETIX_SDK_DIR}. Run: git submodule update --init --recursive"
+  fi
+  command -v cmake >/dev/null 2>&1 || die "cmake not found. Install cmake first."
+  if [ ! -f /usr/include/eigen3/Eigen/Core ]; then
+    log "Eigen3 headers not found; installing libeigen3-dev"
+    sudo apt-get update
+    sudo apt-get install -y libeigen3-dev
+  fi
+
+  local pybind11_cmake
+  if ! pybind11_cmake="$(uv run --no-sync python -m pybind11 --cmakedir)"; then
+    die "cannot locate pybind11 CMake config in the current uv environment"
+  fi
+
+  local ort_shim
+  ort_shim="$(ensure_noetix_onnxruntime_cmake_shim)"
+
+  local prefix_path="${pybind11_cmake};${ort_shim}"
+  if [ -n "${CMAKE_PREFIX_PATH:-}" ]; then
+    prefix_path="${prefix_path};${CMAKE_PREFIX_PATH}"
+  fi
+
+  log "building Noetix BUMI Python bindings"
+  log "source path: ${NOETIX_SDK_DIR}"
+  cmake -S "${NOETIX_SDK_DIR}" -B "${NOETIX_SDK_DIR}/build" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DPython3_EXECUTABLE="${PWD}/.venv/bin/python" \
+    -DCMAKE_PREFIX_PATH="${prefix_path}"
+  cmake --build "${NOETIX_SDK_DIR}/build" \
+    --target highcontrol_py lowcontrol_py mediacontrol_py \
+    -j "${BUILD_JOBS}"
+
+  if ! find "${NOETIX_SDK_DIR}/build" -maxdepth 1 -name 'lowcontrol_py*.so' -type f | grep -q .; then
+    die "Noetix SDK build finished, but lowcontrol_py*.so was not found in ${NOETIX_SDK_DIR}/build"
+  fi
+
+  uv run --no-sync python - "${NOETIX_SDK_DIR}/build" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+import lowcontrol_py
+print("[setup_env] lowcontrol_py import ok")
+PY
+}
+
+install_selected_noetix() {
+  case "${NOETIX_SETUP}" in
+    skip)
+      log "skipping Noetix BUMI SDK build"
+      ;;
+    build)
+      build_noetix_bumi_sdk
+      ;;
+    *)
+      die "unknown KITOV_NOETIX_SETUP=${NOETIX_SETUP}. Use skip or build."
+      ;;
+  esac
+}
+
 command -v uv >/dev/null 2>&1 || die "uv not found. Install uv first: curl -LsSf https://astral.sh/uv/install.sh | sh"
 choose_install_target "$@"
 log "install target=${INSTALL_TARGET}"
 choose_xrobot_setup
 log "xrobot setup=${XROBOT_SETUP}"
+choose_noetix_setup
+log "noetix setup=${NOETIX_SETUP}"
 
 if [ -d ".venv" ]; then
   if [ "${RECREATE_VENV}" = "1" ]; then
@@ -875,5 +981,6 @@ case "${INSTALL_TARGET}" in
 esac
 
 install_selected_xrobot
+install_selected_noetix
 
 log "done"

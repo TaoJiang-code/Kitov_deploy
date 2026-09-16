@@ -174,18 +174,31 @@ The script then asks for XRobot setup:
 4) all         SDK + PC Service
 ```
 
+Finally, the script asks whether to build the BUMI Noetix SDK:
+
+```text
+1) skip        do not build Noetix BUMI SDK
+2) build       build lowcontrol_py/highcontrol_py/mediacontrol_py
+```
+
+Choose `build` before running `scripts/run_bumi_policy_real.sh`; otherwise the
+real-hardware entrypoint cannot import
+`third_party/noetix_sdk_bumi/build/lowcontrol_py*.so`. If Eigen3 headers are
+missing, the script installs `libeigen3-dev` automatically.
+
 For non-interactive setup, use environment variables. If you only want the
 Python runtime dependencies, skip XRobot setup explicitly:
 
 ```bash
-KITOV_INSTALL_TARGET=onnxruntime KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=torch KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=all KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=onnxruntime KITOV_XROBOT_SETUP=skip KITOV_NOETIX_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=torch KITOV_XROBOT_SETUP=skip KITOV_NOETIX_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=all KITOV_XROBOT_SETUP=skip KITOV_NOETIX_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=skip KITOV_NOETIX_SETUP=skip scripts/tool/setup_env.sh
 
-KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=sdk scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
-KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=all scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=sdk KITOV_NOETIX_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service KITOV_NOETIX_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=all KITOV_NOETIX_SETUP=skip scripts/tool/setup_env.sh
+KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=skip KITOV_NOETIX_SETUP=build scripts/tool/setup_env.sh
 ```
 
 The default `KITOV_ONNXRUNTIME_MODE=auto` installs the regular CPU ONNX Runtime
