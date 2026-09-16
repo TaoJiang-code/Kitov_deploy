@@ -16,6 +16,7 @@ JETSON_ONNXRUNTIME_JP6_CU126_INDEX="https://pypi.jetson-ai-lab.io/jp6/cu126"
 JETSON_ONNXRUNTIME_VERSION="${KITOV_JETSON_ONNXRUNTIME_VERSION:-1.23.0}"
 XROBOT_PROTOBUF_VERSION="${KITOV_XROBOT_PROTOBUF_VERSION:-27.2}"
 XROBOT_ABSEIL_VERSION="${KITOV_XROBOT_ABSEIL_VERSION:-20240116.2}"
+XROBOT_GRPC_VERSION="${KITOV_XROBOT_GRPC_VERSION:-1.64.0}"
 
 log() {
   printf '[setup_env] %s\n' "$*"
@@ -422,6 +423,33 @@ ensure_xrobot_aarch64_protobuf_headers() {
       log "installing utf8_range headers from protobuf v${XROBOT_PROTOBUF_VERSION} into ${grpc_include}"
       cp "${protobuf_source_dir}/third_party/utf8_range/utf8_range.h" "${grpc_include}/"
       cp "${protobuf_source_dir}/third_party/utf8_range/utf8_validity.h" "${grpc_include}/"
+    fi
+  fi
+
+  if [ ! -f "${grpc_include}/grpcpp/generic/async_generic_service.h" ]; then
+    log "aarch64 XRoboToolkit grpc headers are missing grpcpp headers"
+    log "installing grpc headers v${XROBOT_GRPC_VERSION} into ${grpc_include}"
+
+    local grpc_archive="${deps_dir}/grpc-${XROBOT_GRPC_VERSION}.tar.gz"
+    local grpc_source_dir="${deps_dir}/grpc-${XROBOT_GRPC_VERSION}"
+
+    if [ ! -d "${grpc_source_dir}" ]; then
+      if [ ! -f "${grpc_archive}" ]; then
+        download_file \
+          "https://github.com/grpc/grpc/archive/refs/tags/v${XROBOT_GRPC_VERSION}.tar.gz" \
+          "${grpc_archive}"
+      fi
+      tar -xzf "${grpc_archive}" -C "${deps_dir}"
+    fi
+
+    if [ ! -f "${grpc_source_dir}/include/grpcpp/generic/async_generic_service.h" ]; then
+      die "downloaded grpc v${XROBOT_GRPC_VERSION}, but grpcpp/generic/async_generic_service.h was not found"
+    fi
+
+    cp -a "${grpc_source_dir}/include/grpc" "${grpc_include}/"
+    cp -a "${grpc_source_dir}/include/grpcpp" "${grpc_include}/"
+    if [ -d "${grpc_source_dir}/include/grpc++" ]; then
+      cp -a "${grpc_source_dir}/include/grpc++" "${grpc_include}/"
     fi
   fi
 }

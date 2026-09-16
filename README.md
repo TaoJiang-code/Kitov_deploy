@@ -281,7 +281,9 @@ On Jetson/aarch64, if XRoboToolkit's bundled grpc include directory is missing
 `google/protobuf/runtime_version.h`, the script downloads protobuf `v27.2` and
 copies the matching C++ headers into the bundled include directory before
 building. Protobuf 27.x also depends on Abseil headers, so the script installs
-`abseil-cpp 20240116.2` headers into the same bundled include directory.
+`abseil-cpp 20240116.2` headers into the same bundled include directory. If the
+bundled include directory is also missing `grpcpp/...`, the script installs
+public headers from `grpc v1.64.0`.
 
 Non-interactive SDK-only setup:
 

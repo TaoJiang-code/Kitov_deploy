@@ -277,7 +277,8 @@ Jetson/aarch64 上如果 XRoboToolkit 仓库自带的 grpc include 缺
 `google/protobuf/runtime_version.h`，脚本会自动下载 protobuf `v27.2` 源码包，并把对应
 C++ headers 补到 `workspace/xrobot_toolkit/XRoboToolkit-PC-Service` 的 bundled include
 目录后再编译。protobuf 27.x 还依赖 Abseil headers，脚本也会自动补
-`abseil-cpp 20240116.2`。
+`abseil-cpp 20240116.2`。如果 bundled include 继续缺 `grpcpp/...`，脚本会自动补
+`grpc v1.64.0` 的 public headers。
 
 非交互安装只装 SDK：
 
