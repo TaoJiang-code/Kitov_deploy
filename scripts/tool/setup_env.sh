@@ -19,6 +19,11 @@ XROBOT_ABSEIL_VERSION="${KITOV_XROBOT_ABSEIL_VERSION:-20240116.2}"
 XROBOT_GRPC_VERSION="${KITOV_XROBOT_GRPC_VERSION:-1.64.0}"
 XROBOT_SERVICE_REF="${KITOV_XROBOT_SERVICE_REF:-}"
 XROBOT_QT_ROOT="${KITOV_QT_ROOT:-}"
+XROBOT_QT_VERSION="${KITOV_QT_VERSION:-6.7.3}"
+XROBOT_QT_ARCH="${KITOV_QT_ARCH:-gcc_arm64}"
+XROBOT_QT_INSTALL_ROOT="${KITOV_QT_INSTALL_ROOT:-${HOME}/Qt}"
+XROBOT_QT_INSTALL_TIMEOUT="${KITOV_QT_INSTALL_TIMEOUT:-120}"
+XROBOT_QT_MODULES="${KITOV_QT_MODULES:-qt5compat qtshadertools qtwebsockets qtmultimedia qtpositioning qtwebchannel qtwebengine qtquick3d qtquicktimeline qt3d qtcharts qtvirtualkeyboard}"
 
 log() {
   printf '[setup_env] %s\n' "$*"
@@ -504,10 +509,11 @@ find_qt6_root() {
   local candidate
   for candidate in \
     "${XROBOT_QT_ROOT}" \
-    "${HOME}/Qt/6.7.3/gcc_arm64" \
-    "${HOME}/Qt6/6.7.3/gcc_arm64" \
-    "/home/orin_pico/Qt/6.7.3/gcc_arm64" \
-    "/opt/Qt/6.7.3/gcc_arm64" \
+    "${XROBOT_QT_INSTALL_ROOT}/${XROBOT_QT_VERSION}/${XROBOT_QT_ARCH}" \
+    "${HOME}/Qt/${XROBOT_QT_VERSION}/${XROBOT_QT_ARCH}" \
+    "${HOME}/Qt6/${XROBOT_QT_VERSION}/${XROBOT_QT_ARCH}" \
+    "/home/orin_pico/Qt/${XROBOT_QT_VERSION}/${XROBOT_QT_ARCH}" \
+    "/opt/Qt/${XROBOT_QT_VERSION}/${XROBOT_QT_ARCH}" \
     "/usr"; do
     if [ -n "${candidate}" ] && [ -f "${candidate}/lib/cmake/Qt6/Qt6Config.cmake" ]; then
       printf '%s\n' "${candidate}"
@@ -515,6 +521,33 @@ find_qt6_root() {
     fi
   done
   return 1
+}
+
+install_qt6_aarch64() {
+  if [ "$(uname -m)" != "aarch64" ]; then
+    return
+  fi
+
+  log "Qt6 for aarch64 not found; installing Qt ${XROBOT_QT_VERSION} ${XROBOT_QT_ARCH} into ${XROBOT_QT_INSTALL_ROOT}"
+  log "installing aqtinstall into current uv environment"
+  uv pip install aqtinstall
+
+  local modules=()
+  if [ -n "${XROBOT_QT_MODULES}" ]; then
+    # shellcheck disable=SC2206
+    modules=(${XROBOT_QT_MODULES})
+  fi
+
+  if [ "${#modules[@]}" -gt 0 ]; then
+    uv run python -m aqt install-qt linux desktop "${XROBOT_QT_VERSION}" "${XROBOT_QT_ARCH}" \
+      -O "${XROBOT_QT_INSTALL_ROOT}" \
+      --timeout "${XROBOT_QT_INSTALL_TIMEOUT}" \
+      -m "${modules[@]}"
+  else
+    uv run python -m aqt install-qt linux desktop "${XROBOT_QT_VERSION}" "${XROBOT_QT_ARCH}" \
+      -O "${XROBOT_QT_INSTALL_ROOT}" \
+      --timeout "${XROBOT_QT_INSTALL_TIMEOUT}"
+  fi
 }
 
 patch_xrobot_aarch64_qt_script() {
@@ -526,19 +559,22 @@ patch_xrobot_aarch64_qt_script() {
 
   local qt_root
   if ! qt_root="$(find_qt6_root)"; then
-    cat >&2 <<'EOF'
-[setup_env] ERROR: Qt6 for aarch64 was not found.
+    install_qt6_aarch64
+    if ! qt_root="$(find_qt6_root)"; then
+      cat >&2 <<EOF
+[setup_env] ERROR: Qt6 for aarch64 was not found after automatic install.
 
 XRoboToolkit PC Service on Jetson/aarch64 needs a Qt6 ARM64 installation.
-Install Qt, then rerun with:
+Install Qt manually, then rerun with:
 
-  KITOV_QT_ROOT=/path/to/Qt/6.7.3/gcc_arm64 KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service ./scripts/tool/setup_env.sh
+  KITOV_QT_ROOT=/path/to/Qt/${XROBOT_QT_VERSION}/${XROBOT_QT_ARCH} KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service ./scripts/tool/setup_env.sh
 
 Expected file:
 
-  $KITOV_QT_ROOT/lib/cmake/Qt6/Qt6Config.cmake
+  \$KITOV_QT_ROOT/lib/cmake/Qt6/Qt6Config.cmake
 EOF
-    exit 2
+      exit 2
+    fi
   fi
 
   log "using Qt root for XRoboToolkit PC Service: ${qt_root}"

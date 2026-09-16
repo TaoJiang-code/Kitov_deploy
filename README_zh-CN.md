@@ -334,7 +334,9 @@ scripts/tool/setup_env.sh
 
 Jetson/aarch64 编译 PC Service 时需要 Qt6 ARM64。脚本会自动检查常见路径，例如
 `~/Qt/6.7.3/gcc_arm64`、`~/Qt6/6.7.3/gcc_arm64`、`/home/orin_pico/Qt/6.7.3/gcc_arm64`。
-如果 Qt 装在别的位置：
+如果没有找到，会自动通过 `aqtinstall` 安装 Qt `6.7.3 gcc_arm64` 到 `~/Qt`。
+
+如果 Qt 已经装在别的位置：
 
 ```bash
 KITOV_QT_ROOT=/path/to/Qt/6.7.3/gcc_arm64 KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
@@ -344,6 +346,13 @@ KITOV_QT_ROOT=/path/to/Qt/6.7.3/gcc_arm64 KITOV_INSTALL_TARGET=skip KITOV_XROBOT
 
 ```text
 $KITOV_QT_ROOT/lib/cmake/Qt6/Qt6Config.cmake
+```
+
+Qt 自动安装参数也可以覆盖：
+
+```bash
+KITOV_QT_VERSION=6.7.3 KITOV_QT_ARCH=gcc_arm64 KITOV_QT_INSTALL_ROOT=~/Qt \
+  KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
 ```
 
 非交互安装只装 PC Service：

@@ -341,7 +341,10 @@ is missing, the build step fails and should be rerun after installing Qt.
 
 Jetson/aarch64 PC Service builds need Qt6 ARM64. The setup script checks common
 paths such as `~/Qt/6.7.3/gcc_arm64`, `~/Qt6/6.7.3/gcc_arm64`, and
-`/home/orin_pico/Qt/6.7.3/gcc_arm64`. If Qt is installed elsewhere:
+`/home/orin_pico/Qt/6.7.3/gcc_arm64`. If Qt is missing, it installs Qt
+`6.7.3 gcc_arm64` into `~/Qt` with `aqtinstall`.
+
+If Qt is installed elsewhere:
 
 ```bash
 KITOV_QT_ROOT=/path/to/Qt/6.7.3/gcc_arm64 KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
@@ -351,6 +354,13 @@ The expected file is:
 
 ```text
 $KITOV_QT_ROOT/lib/cmake/Qt6/Qt6Config.cmake
+```
+
+The automatic Qt install can also be overridden:
+
+```bash
+KITOV_QT_VERSION=6.7.3 KITOV_QT_ARCH=gcc_arm64 KITOV_QT_INSTALL_ROOT=~/Qt \
+  KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
 ```
 
 Non-interactive service-only setup:
