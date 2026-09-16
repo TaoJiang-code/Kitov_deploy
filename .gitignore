@@ -48,6 +48,8 @@ models/**/*.ckpt
 models/**/*.safetensors
 models/**/*.bin
 models/**/*.engine
+!models/bumi/rgmt/
+!models/bumi/rgmt/policy.onnx
 
 # Native build outputs
 *.so
