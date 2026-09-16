@@ -19,3 +19,14 @@ models/g1/exported/
 The policy ONNX file name is inferred from `*.meta.json`; it does not have to
 be `FBcprAuxModel.onnx` as long as the matching metadata file is named
 `<policy_name>.meta.json`.
+
+BUMI RGMT uses a single policy ONNX instead of the ONNX/backward bundle:
+
+```text
+models/bumi/rgmt/
+  policy.onnx
+```
+
+The default RGMT deploy config is `configs/policy/bumi_rgmt.json`.
+TorchScript `policy.pt` is still supported as a fallback when PyTorch is
+installed.

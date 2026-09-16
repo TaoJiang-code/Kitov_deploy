@@ -1,0 +1,64 @@
+{
+  "schema": "kitov_deploy.bumi_noetix_hardware.v1",
+  "robot": "bumi",
+  "sdk_root": "third_party/noetix_sdk_bumi",
+  "sdk_build_dir": "third_party/noetix_sdk_bumi/build",
+  "dds_config": "third_party/noetix_sdk_bumi/config/dds.xml",
+  "num_motors": 21,
+  "recv_timeout_s": 1.0,
+  "max_velocity_rad_s": 1.0,
+  "damping_kd": [
+    0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1
+  ],
+  "policy_kp": [
+    53.0,
+    12.0, 12.0, 12.0, 12.0,
+    12.0, 12.0, 12.0, 12.0,
+    60.0, 60.0, 60.0, 45.0, 10.0, 10.0,
+    60.0, 60.0, 60.0, 45.0, 10.0, 10.0
+  ],
+  "policy_kd": [
+    3.4,
+    0.4, 0.4, 0.4, 0.4,
+    0.4, 0.4, 0.4, 0.4,
+    3.0, 3.0, 2.5, 2.0, 0.5, 0.5,
+    3.0, 3.0, 2.5, 2.0, 0.5, 0.5
+  ],
+  "zero_kp": [
+    20.0,
+    8.0, 8.0, 8.0, 8.0,
+    8.0, 8.0, 8.0, 8.0,
+    30.0, 30.0, 30.0, 25.0, 8.0, 8.0,
+    30.0, 30.0, 30.0, 25.0, 8.0, 8.0
+  ],
+  "zero_kd": [
+    2.0,
+    0.4, 0.4, 0.4, 0.4,
+    0.4, 0.4, 0.4, 0.4,
+    2.0, 2.0, 1.5, 1.0, 0.4, 0.4,
+    2.0, 2.0, 1.5, 1.0, 0.4, 0.4
+  ],
+  "joints": [
+    {"deploy_joint": "waist_yaw_joint", "sdk_joint": "waist_1_joint"},
+    {"deploy_joint": "l_arm_pitch_joint", "sdk_joint": "arm_l1_joint"},
+    {"deploy_joint": "l_arm_roll_joint", "sdk_joint": "arm_l2_joint"},
+    {"deploy_joint": "l_arm_yaw_joint", "sdk_joint": "arm_l3_joint"},
+    {"deploy_joint": "l_elbow_pitch_joint", "sdk_joint": "arm_l4_joint"},
+    {"deploy_joint": "r_arm_pitch_joint", "sdk_joint": "arm_r1_joint"},
+    {"deploy_joint": "r_arm_roll_joint", "sdk_joint": "arm_r2_joint"},
+    {"deploy_joint": "r_arm_yaw_joint", "sdk_joint": "arm_r3_joint"},
+    {"deploy_joint": "r_elbow_pitch_joint", "sdk_joint": "arm_r4_joint"},
+    {"deploy_joint": "l_leg_pitch_joint", "sdk_joint": "leg_l1_joint"},
+    {"deploy_joint": "l_leg_roll_joint", "sdk_joint": "leg_l2_joint"},
+    {"deploy_joint": "l_leg_yaw_joint", "sdk_joint": "leg_l3_joint"},
+    {"deploy_joint": "l_knee_pitch_joint", "sdk_joint": "leg_l4_joint"},
+    {"deploy_joint": "l_ankle_pitch_joint", "sdk_joint": "leg_l5_joint"},
+    {"deploy_joint": "l_ankle_roll_joint", "sdk_joint": "leg_l6_joint"},
+    {"deploy_joint": "r_leg_pitch_joint", "sdk_joint": "leg_r1_joint"},
+    {"deploy_joint": "r_leg_roll_joint", "sdk_joint": "leg_r2_joint"},
+    {"deploy_joint": "r_leg_yaw_joint", "sdk_joint": "leg_r3_joint"},
+    {"deploy_joint": "r_knee_pitch_joint", "sdk_joint": "leg_r4_joint"},
+    {"deploy_joint": "r_ankle_pitch_joint", "sdk_joint": "leg_r5_joint"},
+    {"deploy_joint": "r_ankle_roll_joint", "sdk_joint": "leg_r6_joint"}
+  ]
+}

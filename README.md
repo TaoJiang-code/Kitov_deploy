@@ -23,6 +23,15 @@ PICO XRoboToolkit app
   -> MuJoCo PD sim2sim viewer
 ```
 
+BUMI also supports an RGMT policy path:
+
+```text
+PICO/XRobot -> GMR online retargeting -> BUMI qpos
+  -> RGMT policy.onnx
+  -> q_target
+  -> MuJoCo PD sim2sim viewer
+```
+
 This repository does not require changing directory into the GMR project at
 runtime, and it no longer imports code from the external GMR repository. The
 online retargeting implementation lives in this repository:
@@ -46,13 +55,18 @@ scripts/debug/replay_xrobot_frame.py
 scripts/debug/check_policy_model.py
 scripts/debug/replay_bfm_policy.py
 scripts/xrobot_policy_infer.py
+scripts/xrobot_rgmt_policy_infer.py
+scripts/xrobot_bumi_rgmt_policy_real.py
 scripts/xrobot_openarm_control.py
 scripts/run_openarm_teleop.sh
 scripts/run_bumi_policy_sim.sh
+scripts/run_bumi_rgmt_policy_sim.sh
+scripts/run_bumi_policy_real.sh
 scripts/run_g1_policy_sim.sh
 kitov_deploy/xrobot_stream.py
 kitov_deploy/gmr_online.py
 kitov_deploy/hardware/openarm_can_bridge.py
+kitov_deploy/hardware/bumi_noetix_bridge.py
 ee_body/
 kitov_deploy/policy_runtime.py
 kitov_deploy/mujoco_policy_sim.py
@@ -60,8 +74,10 @@ configs/gmr/xrobot_to_g1.json
 configs/gmr/xrobot_to_bumi.json
 configs/gmr/xrobot_to_openarm_v1.json
 configs/hardware/openarm_v1.json
+configs/hardware/bumi_noetix.json
 configs/policy/g1.json
 configs/policy/bumi.json
+configs/policy/bumi_rgmt.json
 ```
 
 Supported online retargeting targets:
@@ -75,7 +91,9 @@ openarm / openarm_v1
 ## Initialize Submodules
 
 G1, BUMI, and OpenArm v1 robot XML / meshes come from the `Glush_Zoo` submodule.
-The OpenArm v1 CAN SDK comes from the `third_party/openarm_can` submodule:
+The OpenArm v1 CAN SDK comes from the `third_party/openarm_can` submodule. The
+Noetix SDK for BUMI hardware lives in the `third_party/noetix_sdk_bumi`
+submodule:
 
 ```bash
 git submodule update --init --recursive
@@ -109,7 +127,60 @@ OpenArm CAN SDK path:
 third_party/openarm_can
 ```
 
+Noetix BUMI SDK path:
+
+```text
+third_party/noetix_sdk_bumi
+```
+
+BUMI real-hardware control does not use `rl_real_g1`. `rl_real_g1
+<YOUR_NETWORK_INTERFACE>` is the G1 / Unitree DDS entrypoint, where the
+argument is the local network interface. In `rl_sar`, BUMI uses
+`rl_real_bumi`; its first argument is a CycloneDDS XML path. If no argument is
+provided, it tries the Noetix SDK default `config/dds.xml`.
+
+```bash
+./cmake_build/bin/rl_real_bumi
+# or explicitly pass a DDS config
+./cmake_build/bin/rl_real_bumi /path/to/dds.xml
+```
+
+If `cmake_build/bin` contains `rl_real_g1` but not `rl_real_bumi`, the BUMI
+real target was not built. Do not use `rl_real_g1` as a substitute.
+
 ## Create uv Environment
+
+Recommended setup command:
+
+```bash
+scripts/tool/setup_env.sh
+```
+
+The default `KITOV_TORCH_MODE=auto` checks `nvidia-smi` on x86 and installs a
+CUDA PyTorch wheel from `cu128` or `cu126` based on the driver capability.
+Jetson is `aarch64` and cannot use the x86 `cu128/cu126` wheels; pass the
+matching NVIDIA Jetson wheel for that JetPack/L4T version:
+
+```bash
+KITOV_JETSON_TORCH_WHEEL=/path/to/torch-xxx-linux_aarch64.whl scripts/tool/setup_env.sh
+```
+
+Manual mode overrides:
+
+```bash
+KITOV_TORCH_MODE=cu128 scripts/tool/setup_env.sh
+KITOV_TORCH_MODE=cu126 scripts/tool/setup_env.sh
+KITOV_TORCH_MODE=cpu scripts/tool/setup_env.sh
+KITOV_TORCH_MODE=skip scripts/tool/setup_env.sh
+```
+
+If `.venv` already exists, the script reuses it by default. To recreate it:
+
+```bash
+KITOV_RECREATE_VENV=1 scripts/tool/setup_env.sh
+```
+
+Manual step-by-step setup:
 
 ```bash
 uv venv --python 3.10
@@ -605,8 +676,9 @@ uv run python scripts/debug/openarm_hardware_tuner.py --hz 50 --slider-space har
 
 ## Model Inference
 
-Model files are not committed to this repository. Copy each exported model bundle
-manually:
+Model files are not committed to this repository. Copy exported files manually.
+
+BFM zero / Kitov ONNX bundle:
 
 ```text
 models/bumi/exported/
@@ -619,6 +691,23 @@ models/g1/exported/
   FBcprAuxModel.meta.json
   backward_encoder.onnx
 ```
+
+BUMI RGMT ONNX:
+
+```text
+models/bumi/rgmt/
+  policy.onnx
+```
+
+The RGMT deploy config is:
+
+```text
+configs/policy/bumi_rgmt.json
+```
+
+If both `policy.onnx` and `policy.pt` exist, `policy.onnx` is used first.
+`policy.pt` is still supported as a fallback, but requires PyTorch in the active
+uv environment.
 
 Check a copied BUMI bundle:
 
@@ -662,10 +751,87 @@ The GMR viewer is launched in a separate child process to avoid MuJoCo/GLFW
 segfaults from two passive viewers in one Python process. It is still started
 and stopped from the same terminal command.
 
+In `--viewer` mode, MuJoCo policy control starts in damping. Terminal and policy
+viewer keys use the same mapping:
+
+```text
+p / P: damping
+0:     reset joints to zero, then stay in damping
+1:     enable policy control
+```
+
 The short launcher is equivalent and opens both windows:
 
 ```bash
 scripts/run_bumi_policy_sim.sh
+```
+
+BUMI RGMT uses a separate policy path and does not use `backward_encoder.onnx`:
+
+```bash
+uv run python scripts/xrobot_rgmt_policy_infer.py \
+  --model-dir models/bumi/rgmt \
+  --hz 50 \
+  --offset-to-ground \
+  --quiet-gmr \
+  --viewer \
+  --gmr-viewer \
+  --show-human
+```
+
+Short launcher:
+
+```bash
+scripts/run_bumi_rgmt_policy_sim.sh
+```
+
+BUMI RGMT real-hardware entrypoint through the Noetix SDK:
+
+```bash
+scripts/run_bumi_policy_real.sh
+```
+
+This launcher connects to `third_party/noetix_sdk_bumi` and sends motor
+commands. It starts in damping mode:
+
+```text
+p / P: return to damping
+0:     rate-limited joint-zero command
+1:     enter RGMT policy only from zero mode; ignored from damping
+```
+
+Hardware parameters live in:
+
+```text
+configs/hardware/bumi_noetix.json
+```
+
+`max_velocity_rad_s` limits joint target slew rate. `policy_kp/policy_kd` are
+used under policy control, and `zero_kp/zero_kd` are used for the `0` command.
+
+If fresh XRobot body frames pause briefly while running, the real entry keeps
+using the last PICO/GMR reference already stored in the RGMT buffer and lets the
+policy hold its output. If `1` is pressed before enough RGMT reference frames
+have been collected, the real entry keeps holding the `0` reset target. It only
+stays in damping when no reset target exists and a valid policy step is not
+available.
+
+Live RGMT delays the policy reference center by `rgmt_command_window_after`
+frames by default. With the current config this is 10 frames, about 0.2s at
+50Hz. This lets the future command window use real received PICO/GMR references
+instead of repeating the newest frame. To disable it:
+
+```bash
+scripts/run_bumi_rgmt_policy_sim.sh --reference-delay-frames 0
+```
+
+The RGMT inputs follow the training-side policy signature:
+
+```text
+rgmt_policy:         projected_gravity + base_ang_vel + dof_pos_rel + dof_vel + last_action
+rgmt_state_history:  last 10 state_obs frames
+rgmt_action_history: last 10 action frames
+rgmt_command:        21-frame GMR reference window with anchor velocity, gravity direction, and reference joint pos
 ```
 
 For G1:

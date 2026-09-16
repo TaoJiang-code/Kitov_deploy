@@ -306,7 +306,7 @@ class LocalMotionRetargeting:
             scale = self.human_scale_table.get(name, 1.0)
             pos, quat = human_data[name]
             if name == self.human_root_name:
-                scaled_pos = pos * float(scale)
+                scaled_pos = pos if self.has_floating_base else pos * float(scale)
             else:
                 scaled_pos = (pos - root_pos) * float(scale) + root_pos
             scaled[name] = (scaled_pos, quat.copy())

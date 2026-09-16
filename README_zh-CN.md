@@ -22,6 +22,15 @@ PICO XRoboToolkit app
   -> MuJoCo PD sim2sim viewer
 ```
 
+BUMI 还额外支持 RGMT 模型链路：
+
+```text
+PICO/XRobot -> GMR 在线重定向 -> BUMI qpos
+  -> RGMT policy.onnx
+  -> q_target
+  -> MuJoCo PD sim2sim viewer
+```
+
 运行时不需要再切到 GMR 目录，也不再 import 外部 GMR 仓库代码。在线重定向逻辑已经放在本仓库：
 
 ```text
@@ -43,13 +52,18 @@ scripts/debug/replay_xrobot_frame.py
 scripts/debug/check_policy_model.py
 scripts/debug/replay_bfm_policy.py
 scripts/xrobot_policy_infer.py
+scripts/xrobot_rgmt_policy_infer.py
+scripts/xrobot_bumi_rgmt_policy_real.py
 scripts/xrobot_openarm_control.py
 scripts/run_openarm_teleop.sh
 scripts/run_bumi_policy_sim.sh
+scripts/run_bumi_rgmt_policy_sim.sh
+scripts/run_bumi_policy_real.sh
 scripts/run_g1_policy_sim.sh
 kitov_deploy/xrobot_stream.py
 kitov_deploy/gmr_online.py
 kitov_deploy/hardware/openarm_can_bridge.py
+kitov_deploy/hardware/bumi_noetix_bridge.py
 ee_body/
 kitov_deploy/policy_runtime.py
 kitov_deploy/mujoco_policy_sim.py
@@ -57,8 +71,10 @@ configs/gmr/xrobot_to_g1.json
 configs/gmr/xrobot_to_bumi.json
 configs/gmr/xrobot_to_openarm_v1.json
 configs/hardware/openarm_v1.json
+configs/hardware/bumi_noetix.json
 configs/policy/g1.json
 configs/policy/bumi.json
+configs/policy/bumi_rgmt.json
 ```
 
 在线重定向目前支持：
@@ -72,7 +88,8 @@ openarm / openarm_v1
 ## 初始化 Submodule
 
 G1、BUMI 和 OpenArm v1 的机器人 XML / mesh 来自本仓库的 `Glush_Zoo` submodule。
-OpenArm v1 的 CAN SDK 来自 `third_party/openarm_can` submodule：
+OpenArm v1 的 CAN SDK 来自 `third_party/openarm_can` submodule。BUMI 实机相关的
+Noetix SDK 放在 `third_party/noetix_sdk_bumi` submodule：
 
 ```bash
 git submodule update --init --recursive
@@ -105,7 +122,58 @@ OpenArm CAN SDK 位置：
 third_party/openarm_can
 ```
 
+Noetix BUMI SDK 位置：
+
+```text
+third_party/noetix_sdk_bumi
+```
+
+BUMI 真机控制不使用 `rl_real_g1`。`rl_real_g1 <YOUR_NETWORK_INTERFACE>` 是
+G1 / Unitree DDS 入口，参数是本机网卡名。BUMI 在 `rl_sar` 里对应的是
+`rl_real_bumi`，并且它的第一个参数是 CycloneDDS XML 配置路径；不传参数时会尝试使用
+Noetix SDK 自带的 `config/dds.xml`。
+
+```bash
+./cmake_build/bin/rl_real_bumi
+# 或显式指定 DDS 配置
+./cmake_build/bin/rl_real_bumi /path/to/dds.xml
+```
+
+如果 `cmake_build/bin` 里只有 `rl_real_g1`、没有 `rl_real_bumi`，说明 BUMI 真机
+target 没有被编译出来，不应该改用 `rl_real_g1` 顶上。
+
 ## 创建 uv 环境
+
+推荐直接用脚本创建 uv 环境并安装 PyTorch：
+
+```bash
+scripts/tool/setup_env.sh
+```
+
+默认 `KITOV_TORCH_MODE=auto`。x86 机器会检查 `nvidia-smi`，并按驱动支持的
+CUDA capability 自动选择 `cu128` 或 `cu126` PyTorch wheel。Jetson 是 `aarch64`，
+不能使用 x86 的 `cu128/cu126` wheel，需要指定匹配 JetPack/L4T 的 NVIDIA Jetson wheel：
+
+```bash
+KITOV_JETSON_TORCH_WHEEL=/path/to/torch-xxx-linux_aarch64.whl scripts/tool/setup_env.sh
+```
+
+也可以手动指定：
+
+```bash
+KITOV_TORCH_MODE=cu128 scripts/tool/setup_env.sh
+KITOV_TORCH_MODE=cu126 scripts/tool/setup_env.sh
+KITOV_TORCH_MODE=cpu scripts/tool/setup_env.sh
+KITOV_TORCH_MODE=skip scripts/tool/setup_env.sh
+```
+
+如果 `.venv` 已存在，脚本默认复用它；需要重建时再显式指定：
+
+```bash
+KITOV_RECREATE_VENV=1 scripts/tool/setup_env.sh
+```
+
+分步创建环境：
 
 ```bash
 uv venv --python 3.10
@@ -568,7 +636,9 @@ uv run python scripts/debug/openarm_hardware_tuner.py --hz 50 --slider-space har
 
 ## 模型推理
 
-模型文件不提交到本仓库，需要你手动复制导出的 ONNX bundle：
+模型文件不提交到本仓库，需要你手动复制导出的文件。
+
+BFM zero / Kitov ONNX bundle：
 
 ```text
 models/bumi/exported/
@@ -581,6 +651,22 @@ models/g1/exported/
   FBcprAuxModel.meta.json
   backward_encoder.onnx
 ```
+
+BUMI RGMT ONNX：
+
+```text
+models/bumi/rgmt/
+  policy.onnx
+```
+
+RGMT 的 deploy 配置放在：
+
+```text
+configs/policy/bumi_rgmt.json
+```
+
+如果目录里同时有 `policy.onnx` 和 `policy.pt`，默认优先使用 `policy.onnx`。
+`policy.pt` 仍可作为 fallback，但需要当前 uv 环境里有 PyTorch。
 
 检查 BUMI 模型是否放对：
 
@@ -623,13 +709,85 @@ GMR viewer：实时 GMR 重定向出来的 reference qpos；带 --show-human 时
 GMR viewer 会放到独立子进程里启动，避免两个 `mujoco.viewer` 在同一个
 Python 进程里抢 GLFW/OpenGL 导致段错误。对你来说仍然是一条命令、一个终端启动和关闭。
 
-`--viewer` 模式默认先保持 damping，不让 policy 立刻接管。把焦点放在终端按
-`p`，或者在 policy MuJoCo viewer 里按 `P`，可以在 damping 和 policy 控制之间切换。
+`--viewer` 模式默认先保持 damping，不让 policy 立刻接管。终端和 policy MuJoCo
+viewer 里的按键一致：
+
+```text
+p / P: damping 阻尼模式
+0:     关节复位到 0，然后保持 damping
+1:     policy 接管
+```
 
 短启动脚本等价于上面的 BUMI 命令，也会打开两个窗口：
 
 ```bash
 scripts/run_bumi_policy_sim.sh
+```
+
+BUMI RGMT 走另一条模型线，不经过 `backward_encoder.onnx`：
+
+```bash
+uv run python scripts/xrobot_rgmt_policy_infer.py \
+  --model-dir models/bumi/rgmt \
+  --hz 50 \
+  --offset-to-ground \
+  --quiet-gmr \
+  --viewer \
+  --gmr-viewer \
+  --show-human
+```
+
+短启动脚本：
+
+```bash
+scripts/run_bumi_rgmt_policy_sim.sh
+```
+
+BUMI RGMT 实机入口使用 Noetix SDK：
+
+```bash
+scripts/run_bumi_policy_real.sh
+```
+
+这个脚本默认会连接 `third_party/noetix_sdk_bumi`，并发送电机命令。启动后默认是
+damping 阻尼状态：
+
+```text
+p / P: 回到 damping
+0:     按限速把所有关节目标复位到 0
+1:     只允许从 0 复位状态进入 RGMT policy；damping 状态下按 1 不会接管
+```
+
+实机硬件参数在这里调整：
+
+```text
+configs/hardware/bumi_noetix.json
+```
+
+其中 `max_velocity_rad_s` 控制 `0` 复位和 policy 目标的每关节限速；
+`policy_kp/policy_kd` 是策略接管时发送给 Noetix SDK 的 PD 参数；
+`zero_kp/zero_kd` 是按 `0` 复位时使用的 PD 参数。
+
+如果运行中短时间没有新的 XRobot 人体帧，实机入口不会切回 damping；它会继续使用
+最后已经进入 RGMT buffer 的 PICO/GMR reference，让 policy 自己保持输出。如果按 `1`
+进入 policy 时 RGMT reference buffer 还没攒够，实机会继续保持按 `0` 生成的复位目标；
+只有从未进入过复位目标、也无法合法推理时，才会保持 damping。
+
+实时 RGMT 默认会把 policy 当前 reference 延迟 `rgmt_command_window_after` 帧。
+当前配置是 10 帧，50Hz 下约 0.2s。这样 command window 的未来 10 帧会使用真实收到的
+PICO/GMR reference，而不是复制最新帧。要关掉这个延迟可以显式加：
+
+```bash
+scripts/run_bumi_rgmt_policy_sim.sh --reference-delay-frames 0
+```
+
+RGMT 输入对齐训练侧四路输入：
+
+```text
+rgmt_policy:         projected_gravity + base_ang_vel + dof_pos_rel + dof_vel + last_action
+rgmt_state_history:  最近 10 帧 state_obs
+rgmt_action_history: 最近 10 帧 action
+rgmt_command:        GMR reference 组成的 21 帧窗口，包含 anchor 速度、重力方向和 reference joint pos
 ```
 
 G1：

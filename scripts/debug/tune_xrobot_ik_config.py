@@ -131,8 +131,10 @@ class IKJsonTuner:
         self.on_saved = on_saved
         self.closed = False
         self._updating = False
+        self._human_scale_after_id: str | None = None
 
         self.config = self._load()
+        self.has_target_origin = "target_origin" in self.config
         default_display_names = _config_human_names(self.config)
         self.root = tk.Tk()
         self.root.title(f"IK JSON Tuner - {self.config_path.name}")
@@ -155,6 +157,12 @@ class IKJsonTuner:
             name: tk.BooleanVar(value=name in default_display_names)
             for name in self.human_body_names
         }
+        self.human_scale_vars = {
+            name: tk.DoubleVar(value=float(value))
+            for name, value in self.config.get("human_scale_table", {}).items()
+        }
+        for var in self.human_scale_vars.values():
+            var.trace_add("write", self._schedule_human_scale_apply)
 
         target_origin = self.config.get("target_origin", {})
         self.target_human_origin_var = tk.StringVar(value=str(target_origin.get("human_origin", "")))
@@ -190,19 +198,28 @@ class IKJsonTuner:
         ttk.Label(header, textvariable=self.status_var).grid(row=0, column=0, sticky="w")
         ttk.Button(header, text="Reload JSON", command=self.reload_from_disk).grid(row=0, column=1, padx=4)
         ttk.Button(header, text="Save Entry", command=self.save_selected_entry).grid(row=0, column=2, padx=4)
-        ttk.Button(header, text="Save Target Origin", command=self.save_target_origin).grid(row=0, column=3, padx=4)
+        if self.has_target_origin:
+            ttk.Button(header, text="Save Target Origin", command=self.save_target_origin).grid(row=0, column=3, padx=4)
 
         notebook = ttk.Notebook(self.root)
         notebook.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
 
         ik_tab = ttk.Frame(notebook, padding=10)
-        target_tab = ttk.Frame(notebook, padding=10)
-        display_tab = ttk.Frame(notebook, padding=10)
         notebook.add(ik_tab, text="IK Match")
-        notebook.add(target_tab, text="Target Origin")
-        notebook.add(display_tab, text="Human Display")
         self._build_ik_tab(ik_tab)
-        self._build_target_tab(target_tab)
+
+        if self.human_scale_vars:
+            scale_tab = ttk.Frame(notebook, padding=10)
+            notebook.add(scale_tab, text="Human Scale")
+            self._build_human_scale_tab(scale_tab)
+
+        if self.has_target_origin:
+            target_tab = ttk.Frame(notebook, padding=10)
+            notebook.add(target_tab, text="Target Origin")
+            self._build_target_tab(target_tab)
+
+        display_tab = ttk.Frame(notebook, padding=10)
+        notebook.add(display_tab, text="Human Display")
         self._build_display_tab(display_tab)
 
     def _build_ik_tab(self, parent: Any) -> None:
@@ -337,6 +354,38 @@ class IKJsonTuner:
             ttk.Entry(quat_frame, textvariable=self.target_quat_vars[idx], width=10).grid(row=0, column=idx * 2 + 1, padx=(2, 10))
 
         ttk.Button(parent, text="Save Target Origin", command=self.save_target_origin).grid(row=7, column=0, columnspan=2, sticky="w", pady=(18, 0))
+
+    def _build_human_scale_tab(self, parent: Any) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
+
+        buttons = ttk.Frame(parent)
+        buttons.grid(row=0, column=0, sticky="ew")
+        ttk.Button(buttons, text="Save Human Scale", command=self.save_human_scale_table).grid(row=0, column=0, padx=(0, 8))
+        ttk.Button(buttons, text="Reset From JSON", command=self.reload_human_scale_vars).grid(row=0, column=1, padx=(0, 8))
+
+        canvas = tk.Canvas(parent, borderwidth=0, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        frame = ttk.Frame(canvas)
+        frame.bind("<Configure>", lambda _event: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+        scrollbar.grid(row=1, column=1, sticky="ns", pady=(12, 0))
+        frame.columnconfigure(2, weight=1)
+
+        for row, name in enumerate(self.human_scale_vars):
+            ttk.Label(frame, text=name, width=22).grid(row=row, column=0, sticky="w", pady=4)
+            ttk.Entry(frame, textvariable=self.human_scale_vars[name], width=10).grid(row=row, column=1, sticky="w", padx=(8, 10), pady=4)
+            tk.Scale(
+                frame,
+                from_=0.0,
+                to=2.0,
+                orient=tk.HORIZONTAL,
+                resolution=0.01,
+                length=520,
+                variable=self.human_scale_vars[name],
+            ).grid(row=row, column=2, sticky="ew", pady=4)
 
     def _build_display_tab(self, parent: Any) -> None:
         parent.columnconfigure(0, weight=1)
@@ -483,7 +532,50 @@ class IKJsonTuner:
         for var in self.rot_delta_vars:
             var.set(0.0)
 
+    def save_human_scale_table(self) -> None:
+        self._save_human_scale_table("human_scale_table")
+
+    def _schedule_human_scale_apply(self, *_args: Any) -> None:
+        if self._updating:
+            return
+        if self._human_scale_after_id is not None:
+            self.root.after_cancel(self._human_scale_after_id)
+        self._human_scale_after_id = self.root.after(150, self._auto_apply_human_scale_table)
+
+    def _auto_apply_human_scale_table(self) -> None:
+        self._human_scale_after_id = None
+        self._save_human_scale_table("human_scale_table auto")
+
+    def _save_human_scale_table(self, message: str) -> None:
+        if "human_scale_table" not in self.config:
+            self.status_var.set("Current JSON has no human_scale_table")
+            return
+        try:
+            scale_table = {
+                name: float(var.get())
+                for name, var in self.human_scale_vars.items()
+            }
+        except (ValueError, tk.TclError) as exc:
+            self.status_var.set(f"Invalid human scale value: {exc}")
+            return
+        self.config["human_scale_table"] = scale_table
+        self._save(message)
+
+    def reload_human_scale_vars(self) -> None:
+        scale_table = self.config.get("human_scale_table", {})
+        self._updating = True
+        try:
+            for name, var in self.human_scale_vars.items():
+                if name in scale_table:
+                    var.set(float(scale_table[name]))
+        finally:
+            self._updating = False
+        self.status_var.set(f"[{time.strftime('%H:%M:%S')}] reloaded human_scale_table")
+
     def save_target_origin(self) -> None:
+        if not self.has_target_origin:
+            self.status_var.set("Current JSON has no target_origin")
+            return
         self.config["target_origin"] = {
             "human_origin": self.target_human_origin_var.get().strip(),
             "root_rotation_body": self.target_root_rotation_body_var.get().strip(),
@@ -497,16 +589,18 @@ class IKJsonTuner:
 
     def reload_from_disk(self) -> None:
         self.config = self._load()
-        target_origin = self.config.get("target_origin", {})
-        self.target_human_origin_var.set(str(target_origin.get("human_origin", "")))
-        self.target_root_rotation_body_var.set(str(target_origin.get("root_rotation_body", target_origin.get("human_origin", ""))))
-        self.target_lock_root_yaw_var.set(bool(target_origin.get("lock_root_yaw", False)))
-        self.target_heading_yaw_offset_var.set(float(target_origin.get("heading_yaw_offset_deg", 0.0)))
-        self.target_robot_origin_var.set(str(target_origin.get("robot_origin", "")))
-        for idx, value in enumerate(target_origin.get("position_offset", [0.0, 0.0, 0.0])):
-            self.target_pos_offset_vars[idx].set(str(value))
-        for idx, value in enumerate(target_origin.get("rotation_offset", [1.0, 0.0, 0.0, 0.0])):
-            self.target_quat_vars[idx].set(str(value))
+        self.reload_human_scale_vars()
+        if self.has_target_origin:
+            target_origin = self.config.get("target_origin", {})
+            self.target_human_origin_var.set(str(target_origin.get("human_origin", "")))
+            self.target_root_rotation_body_var.set(str(target_origin.get("root_rotation_body", target_origin.get("human_origin", ""))))
+            self.target_lock_root_yaw_var.set(bool(target_origin.get("lock_root_yaw", False)))
+            self.target_heading_yaw_offset_var.set(float(target_origin.get("heading_yaw_offset_deg", 0.0)))
+            self.target_robot_origin_var.set(str(target_origin.get("robot_origin", "")))
+            for idx, value in enumerate(target_origin.get("position_offset", [0.0, 0.0, 0.0])):
+                self.target_pos_offset_vars[idx].set(str(value))
+            for idx, value in enumerate(target_origin.get("rotation_offset", [1.0, 0.0, 0.0, 0.0])):
+                self.target_quat_vars[idx].set(str(value))
         self._refresh_entry_list()
         self.status_var.set(f"[{time.strftime('%H:%M:%S')}] reloaded {self.config_path}")
 

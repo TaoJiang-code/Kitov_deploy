@@ -332,7 +332,11 @@ class MujocoPolicySim:
 
     def _on_viewer_key(self, key: int) -> None:
         if int(key) in (ord("P"), ord("p")):
-            self.toggle_policy_control()
+            self.set_damping_control()
+        elif int(key) == ord("1"):
+            self.set_policy_control()
+        elif int(key) == ord("0"):
+            self.reset_joints_to_zero()
         if self._external_key_callback is not None:
             self._external_key_callback(key)
 
@@ -344,6 +348,31 @@ class MujocoPolicySim:
         mode = "policy" if self.policy_enabled else "damping"
         print(f"[mujoco_policy_sim] control mode: {mode}")
         return self.policy_enabled
+
+    def set_policy_control(self) -> None:
+        if not self.policy_enabled:
+            print("[mujoco_policy_sim] control mode: policy")
+        self.policy_enabled = True
+
+    def set_damping_control(self) -> None:
+        if self.policy_enabled:
+            print("[mujoco_policy_sim] control mode: damping")
+        self.policy_enabled = False
+
+    def reset_joints_to_zero(self) -> None:
+        state = self.robot_state()
+        self.reset(
+            RobotState(
+                root_pos=state.root_pos,
+                root_quat_wxyz=state.root_quat_wxyz,
+                dof_pos=np.zeros(self.robot_config.num_dof, dtype=np.float32),
+                root_lin_vel=np.zeros(3, dtype=np.float32),
+                root_ang_vel=np.zeros(3, dtype=np.float32),
+                dof_vel=np.zeros(self.robot_config.num_dof, dtype=np.float32),
+            )
+        )
+        self.set_damping_control()
+        print("[mujoco_policy_sim] reset joints to zero; control mode: damping")
 
     def reset(self, state: RobotState | None = None) -> None:
         self.data.qpos[:] = 0.0

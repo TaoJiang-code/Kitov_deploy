@@ -4,3 +4,6 @@
 [submodule "third_party/openarm_can"]
 	path = third_party/openarm_can
 	url = https://github.com/enactic/openarm_can.git
+[submodule "third_party/noetix_sdk_bumi"]
+	path = third_party/noetix_sdk_bumi
+	url = https://github.com/Noetix-Robotics/noetix_sdk_bumi.git
