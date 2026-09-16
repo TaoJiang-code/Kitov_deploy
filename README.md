@@ -339,6 +339,20 @@ back to source install. It clones/reuses
 `/opt/apps/roboticsservice`. Source builds require Qt; if the required Qt setup
 is missing, the build step fails and should be rerun after installing Qt.
 
+Jetson/aarch64 PC Service builds need Qt6 ARM64. The setup script checks common
+paths such as `~/Qt/6.7.3/gcc_arm64`, `~/Qt6/6.7.3/gcc_arm64`, and
+`/home/orin_pico/Qt/6.7.3/gcc_arm64`. If Qt is installed elsewhere:
+
+```bash
+KITOV_QT_ROOT=/path/to/Qt/6.7.3/gcc_arm64 KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
+```
+
+The expected file is:
+
+```text
+$KITOV_QT_ROOT/lib/cmake/Qt6/Qt6Config.cmake
+```
+
 Non-interactive service-only setup:
 
 ```bash

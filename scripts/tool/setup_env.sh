@@ -18,6 +18,7 @@ XROBOT_PROTOBUF_VERSION="${KITOV_XROBOT_PROTOBUF_VERSION:-27.2}"
 XROBOT_ABSEIL_VERSION="${KITOV_XROBOT_ABSEIL_VERSION:-20240116.2}"
 XROBOT_GRPC_VERSION="${KITOV_XROBOT_GRPC_VERSION:-1.64.0}"
 XROBOT_SERVICE_REF="${KITOV_XROBOT_SERVICE_REF:-}"
+XROBOT_QT_ROOT="${KITOV_QT_ROOT:-}"
 
 log() {
   printf '[setup_env] %s\n' "$*"
@@ -499,6 +500,74 @@ ensure_xrobot_aarch64_protobuf_headers() {
   fi
 }
 
+find_qt6_root() {
+  local candidate
+  for candidate in \
+    "${XROBOT_QT_ROOT}" \
+    "${HOME}/Qt/6.7.3/gcc_arm64" \
+    "${HOME}/Qt6/6.7.3/gcc_arm64" \
+    "/home/orin_pico/Qt/6.7.3/gcc_arm64" \
+    "/opt/Qt/6.7.3/gcc_arm64" \
+    "/usr"; do
+    if [ -n "${candidate}" ] && [ -f "${candidate}/lib/cmake/Qt6/Qt6Config.cmake" ]; then
+      printf '%s\n' "${candidate}"
+      return
+    fi
+  done
+  return 1
+}
+
+patch_xrobot_aarch64_qt_script() {
+  local service_repo="$1"
+  local build_script="${service_repo}/RoboticsService/qt-gcc_aarch64.sh"
+  if [ "$(uname -m)" != "aarch64" ] || [ ! -f "${build_script}" ]; then
+    return
+  fi
+
+  local qt_root
+  if ! qt_root="$(find_qt6_root)"; then
+    cat >&2 <<'EOF'
+[setup_env] ERROR: Qt6 for aarch64 was not found.
+
+XRoboToolkit PC Service on Jetson/aarch64 needs a Qt6 ARM64 installation.
+Install Qt, then rerun with:
+
+  KITOV_QT_ROOT=/path/to/Qt/6.7.3/gcc_arm64 KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service ./scripts/tool/setup_env.sh
+
+Expected file:
+
+  $KITOV_QT_ROOT/lib/cmake/Qt6/Qt6Config.cmake
+EOF
+    exit 2
+  fi
+
+  log "using Qt root for XRoboToolkit PC Service: ${qt_root}"
+  python - "${build_script}" "${qt_root}" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+qt_root = sys.argv[2]
+qt_path = Path(qt_root)
+if len(qt_path.parents) >= 2:
+    qt_tools = str(qt_path.parents[1] / "Tools")
+else:
+    qt_tools = str(qt_path / "Tools")
+text = path.read_text()
+text = text.replace(
+    "QT_GCC_ARM64=/home/orin_pico/Qt/6.7.3/gcc_arm64",
+    f"QT_GCC_ARM64={qt_root}",
+)
+text = text.replace(
+    "export QT6_TOOLS=/home/orin_pico/Qt/Tools",
+    f"export QT6_TOOLS={qt_tools}",
+)
+text = text.replace("/home/orin_pico/Qt/6.7.3/gcc_arm64", qt_root)
+text = text.replace("/home/orin_pico/Qt/Tools", qt_tools)
+path.write_text(text)
+PY
+}
+
 install_xrobot_python_sdk() {
   command -v git >/dev/null 2>&1 || die "git not found; install git before XRobot SDK setup."
 
@@ -541,6 +610,7 @@ install_xrobot_pc_service_from_source() {
   service_repo="$(xrobot_service_repo_path)"
   ensure_xrobot_service_repo "${service_repo}"
   ensure_xrobot_aarch64_protobuf_headers "${service_repo}"
+  patch_xrobot_aarch64_qt_script "${service_repo}"
 
   local build_script="${service_repo}/RoboticsService/qt-gcc.sh"
   if [ "$(uname -m)" = "aarch64" ] && [ -f "${service_repo}/RoboticsService/qt-gcc_aarch64.sh" ]; then

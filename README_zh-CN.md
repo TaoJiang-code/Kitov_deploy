@@ -332,6 +332,20 @@ scripts/tool/setup_env.sh
 `/opt/apps/roboticsservice`。源码编译依赖 Qt；如果当前机器没有 XRoboToolkit 需要的 Qt，
 脚本会在编译阶段报错，需要先装 Qt 后重跑。
 
+Jetson/aarch64 编译 PC Service 时需要 Qt6 ARM64。脚本会自动检查常见路径，例如
+`~/Qt/6.7.3/gcc_arm64`、`~/Qt6/6.7.3/gcc_arm64`、`/home/orin_pico/Qt/6.7.3/gcc_arm64`。
+如果 Qt 装在别的位置：
+
+```bash
+KITOV_QT_ROOT=/path/to/Qt/6.7.3/gcc_arm64 KITOV_INSTALL_TARGET=skip KITOV_XROBOT_SETUP=service scripts/tool/setup_env.sh
+```
+
+需要能找到：
+
+```text
+$KITOV_QT_ROOT/lib/cmake/Qt6/Qt6Config.cmake
+```
+
 非交互安装只装 PC Service：
 
 ```bash
