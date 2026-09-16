@@ -14,6 +14,7 @@ RECREATE_VENV="${KITOV_RECREATE_VENV:-0}"
 FORCE_XROBOT_SERVICE_INSTALL="${KITOV_FORCE_XROBOT_SERVICE_INSTALL:-${KITOV_FORCE_XROBOT_SERVICE_DEB:-0}}"
 JETSON_ONNXRUNTIME_JP6_CU126_INDEX="https://pypi.jetson-ai-lab.io/jp6/cu126"
 JETSON_ONNXRUNTIME_VERSION="${KITOV_JETSON_ONNXRUNTIME_VERSION:-1.23.0}"
+XROBOT_PROTOBUF_VERSION="${KITOV_XROBOT_PROTOBUF_VERSION:-27.2}"
 
 log() {
   printf '[setup_env] %s\n' "$*"
@@ -340,6 +341,58 @@ ensure_xrobot_service_repo() {
   clone_if_missing "https://github.com/XR-Robotics/XRoboToolkit-PC-Service.git" "${service_repo}"
 }
 
+download_file() {
+  local url="$1"
+  local output="$2"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -L --fail --retry 3 -o "${output}" "${url}"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -O "${output}" "${url}"
+  else
+    die "neither curl nor wget is available; cannot download ${url}"
+  fi
+}
+
+ensure_xrobot_aarch64_protobuf_headers() {
+  local service_repo="$1"
+  local arch
+  arch="$(uname -m)"
+  if [ "${arch}" != "aarch64" ]; then
+    return
+  fi
+
+  local grpc_include="${service_repo}/RoboticsService/Redistributable/linux_aarch64/grpc/include"
+  local runtime_header="${grpc_include}/google/protobuf/runtime_version.h"
+  if [ -f "${runtime_header}" ]; then
+    return
+  fi
+
+  log "aarch64 XRoboToolkit grpc headers are missing google/protobuf/runtime_version.h"
+  log "installing protobuf C++ headers v${XROBOT_PROTOBUF_VERSION} into ${grpc_include}"
+
+  local deps_dir="workspace/xrobot_toolkit/deps"
+  local archive="${deps_dir}/protobuf-${XROBOT_PROTOBUF_VERSION}.tar.gz"
+  local source_dir="${deps_dir}/protobuf-${XROBOT_PROTOBUF_VERSION}"
+  mkdir -p "${deps_dir}"
+
+  if [ ! -d "${source_dir}" ]; then
+    if [ ! -f "${archive}" ]; then
+      download_file \
+        "https://github.com/protocolbuffers/protobuf/releases/download/v${XROBOT_PROTOBUF_VERSION}/protobuf-${XROBOT_PROTOBUF_VERSION}.tar.gz" \
+        "${archive}"
+    fi
+    tar -xzf "${archive}" -C "${deps_dir}"
+  fi
+
+  if [ ! -f "${source_dir}/src/google/protobuf/runtime_version.h" ]; then
+    die "downloaded protobuf v${XROBOT_PROTOBUF_VERSION}, but runtime_version.h was not found"
+  fi
+
+  mkdir -p "${grpc_include}/google"
+  cp -a "${source_dir}/src/google/protobuf" "${grpc_include}/google/"
+}
+
 install_xrobot_python_sdk() {
   command -v git >/dev/null 2>&1 || die "git not found; install git before XRobot SDK setup."
 
@@ -352,6 +405,7 @@ install_xrobot_python_sdk() {
   clone_if_missing "https://github.com/Axellwppr/XRoboToolkit-PC-Service-Pybind" "${pybind_repo}"
 
   local sdk_dir="${service_repo}/RoboticsService/PXREARobotSDK"
+  ensure_xrobot_aarch64_protobuf_headers "${service_repo}"
   log "building XRoboToolkit PXREARobotSDK"
   (cd "${sdk_dir}" && bash build.sh)
 
@@ -378,6 +432,7 @@ install_xrobot_pc_service_from_source() {
 
   local service_repo="workspace/xrobot_toolkit/XRoboToolkit-PC-Service"
   ensure_xrobot_service_repo "${service_repo}"
+  ensure_xrobot_aarch64_protobuf_headers "${service_repo}"
 
   local build_script="${service_repo}/RoboticsService/qt-gcc.sh"
   local bin_dir="${service_repo}/RoboticsService/bin"
