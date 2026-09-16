@@ -280,7 +280,8 @@ the current uv environment.
 On Jetson/aarch64, if XRoboToolkit's bundled grpc include directory is missing
 `google/protobuf/runtime_version.h`, the script downloads protobuf `v27.2` and
 copies the matching C++ headers into the bundled include directory before
-building.
+building. Protobuf 27.x also depends on Abseil headers, so the script installs
+`abseil-cpp 20240116.2` headers into the same bundled include directory.
 
 Non-interactive SDK-only setup:
 

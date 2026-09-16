@@ -15,6 +15,7 @@ FORCE_XROBOT_SERVICE_INSTALL="${KITOV_FORCE_XROBOT_SERVICE_INSTALL:-${KITOV_FORC
 JETSON_ONNXRUNTIME_JP6_CU126_INDEX="https://pypi.jetson-ai-lab.io/jp6/cu126"
 JETSON_ONNXRUNTIME_VERSION="${KITOV_JETSON_ONNXRUNTIME_VERSION:-1.23.0}"
 XROBOT_PROTOBUF_VERSION="${KITOV_XROBOT_PROTOBUF_VERSION:-27.2}"
+XROBOT_ABSEIL_VERSION="${KITOV_XROBOT_ABSEIL_VERSION:-20240116.2}"
 
 log() {
   printf '[setup_env] %s\n' "$*"
@@ -364,33 +365,65 @@ ensure_xrobot_aarch64_protobuf_headers() {
 
   local grpc_include="${service_repo}/RoboticsService/Redistributable/linux_aarch64/grpc/include"
   local runtime_header="${grpc_include}/google/protobuf/runtime_version.h"
-  if [ -f "${runtime_header}" ]; then
-    return
-  fi
-
-  log "aarch64 XRoboToolkit grpc headers are missing google/protobuf/runtime_version.h"
-  log "installing protobuf C++ headers v${XROBOT_PROTOBUF_VERSION} into ${grpc_include}"
 
   local deps_dir="workspace/xrobot_toolkit/deps"
-  local archive="${deps_dir}/protobuf-${XROBOT_PROTOBUF_VERSION}.tar.gz"
-  local source_dir="${deps_dir}/protobuf-${XROBOT_PROTOBUF_VERSION}"
   mkdir -p "${deps_dir}"
 
-  if [ ! -d "${source_dir}" ]; then
-    if [ ! -f "${archive}" ]; then
-      download_file \
-        "https://github.com/protocolbuffers/protobuf/releases/download/v${XROBOT_PROTOBUF_VERSION}/protobuf-${XROBOT_PROTOBUF_VERSION}.tar.gz" \
-        "${archive}"
+  if [ ! -f "${runtime_header}" ]; then
+    log "aarch64 XRoboToolkit grpc headers are missing google/protobuf/runtime_version.h"
+    log "installing protobuf C++ headers v${XROBOT_PROTOBUF_VERSION} into ${grpc_include}"
+
+    local protobuf_archive="${deps_dir}/protobuf-${XROBOT_PROTOBUF_VERSION}.tar.gz"
+    local protobuf_source_dir="${deps_dir}/protobuf-${XROBOT_PROTOBUF_VERSION}"
+
+    if [ ! -d "${protobuf_source_dir}" ]; then
+      if [ ! -f "${protobuf_archive}" ]; then
+        download_file \
+          "https://github.com/protocolbuffers/protobuf/releases/download/v${XROBOT_PROTOBUF_VERSION}/protobuf-${XROBOT_PROTOBUF_VERSION}.tar.gz" \
+          "${protobuf_archive}"
+      fi
+      tar -xzf "${protobuf_archive}" -C "${deps_dir}"
     fi
-    tar -xzf "${archive}" -C "${deps_dir}"
+
+    if [ ! -f "${protobuf_source_dir}/src/google/protobuf/runtime_version.h" ]; then
+      die "downloaded protobuf v${XROBOT_PROTOBUF_VERSION}, but runtime_version.h was not found"
+    fi
+
+    mkdir -p "${grpc_include}/google"
+    cp -a "${protobuf_source_dir}/src/google/protobuf" "${grpc_include}/google/"
   fi
 
-  if [ ! -f "${source_dir}/src/google/protobuf/runtime_version.h" ]; then
-    die "downloaded protobuf v${XROBOT_PROTOBUF_VERSION}, but runtime_version.h was not found"
+  if [ ! -f "${grpc_include}/absl/strings/string_view.h" ]; then
+    log "aarch64 XRoboToolkit grpc headers are missing absl headers"
+    log "installing abseil-cpp headers ${XROBOT_ABSEIL_VERSION} into ${grpc_include}"
+
+    local abseil_archive="${deps_dir}/abseil-cpp-${XROBOT_ABSEIL_VERSION}.tar.gz"
+    local abseil_source_dir="${deps_dir}/abseil-cpp-${XROBOT_ABSEIL_VERSION}"
+
+    if [ ! -d "${abseil_source_dir}" ]; then
+      if [ ! -f "${abseil_archive}" ]; then
+        download_file \
+          "https://github.com/abseil/abseil-cpp/archive/refs/tags/${XROBOT_ABSEIL_VERSION}.tar.gz" \
+          "${abseil_archive}"
+      fi
+      tar -xzf "${abseil_archive}" -C "${deps_dir}"
+    fi
+
+    if [ ! -f "${abseil_source_dir}/absl/strings/string_view.h" ]; then
+      die "downloaded abseil-cpp ${XROBOT_ABSEIL_VERSION}, but absl/strings/string_view.h was not found"
+    fi
+
+    cp -a "${abseil_source_dir}/absl" "${grpc_include}/"
   fi
 
-  mkdir -p "${grpc_include}/google"
-  cp -a "${source_dir}/src/google/protobuf" "${grpc_include}/google/"
+  if [ ! -f "${grpc_include}/utf8_range.h" ]; then
+    local protobuf_source_dir="${deps_dir}/protobuf-${XROBOT_PROTOBUF_VERSION}"
+    if [ -f "${protobuf_source_dir}/third_party/utf8_range/utf8_range.h" ]; then
+      log "installing utf8_range headers from protobuf v${XROBOT_PROTOBUF_VERSION} into ${grpc_include}"
+      cp "${protobuf_source_dir}/third_party/utf8_range/utf8_range.h" "${grpc_include}/"
+      cp "${protobuf_source_dir}/third_party/utf8_range/utf8_validity.h" "${grpc_include}/"
+    fi
+  fi
 }
 
 install_xrobot_python_sdk() {
