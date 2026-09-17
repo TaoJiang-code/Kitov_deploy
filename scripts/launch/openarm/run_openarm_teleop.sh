@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../../.." && pwd)"
+cd "${REPO_ROOT}"
 
 HZ="${KITOV_HZ:-50}"
 CAN_INTERFACES_TEXT="${KITOV_OPENARM_CAN_INTERFACES:-can0 can1}"
@@ -42,7 +44,7 @@ find_openarm_can_cli() {
     return
   fi
 
-  local local_cli="third_party/openarm_can/build/openarm-can-cli"
+  local local_cli="${REPO_ROOT}/third_party/openarm_can/build/openarm-can-cli"
   if [[ -x "${local_cli}" ]]; then
     printf '%s\n' "${local_cli}"
     return
@@ -112,7 +114,7 @@ ensure_xrobot_service
 SERVICE_SHOULD_STOP=1
 
 echo "[run_openarm_teleop] starting OpenArm XRobot teleop"
-uv run python scripts/xrobot_openarm_control.py \
+uv run python "${REPO_ROOT}/scripts/launch/openarm/xrobot_openarm_control.py" \
   --hz "${HZ}" \
   --quiet-gmr \
   --send \

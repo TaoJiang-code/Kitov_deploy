@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../../.." && pwd)"
+cd "${REPO_ROOT}"
 
 MODEL_DIR="${KITOV_G1_MODEL_DIR:-models/g1/kitov_fb_g1}"
 HZ="${KITOV_HZ:-50}"
 ELASTIC_LENGTH="${KITOV_G1_ELASTIC_LENGTH:-1.5}"
 
-exec python scripts/xrobot_policy_infer.py \
+exec python "${REPO_ROOT}/scripts/launch/g1/xrobot_policy_infer.py" \
   --robot g1 \
   --model-dir "${MODEL_DIR}" \
   --hz "${HZ}" \

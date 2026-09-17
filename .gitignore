@@ -39,6 +39,7 @@ dist/
 *.egg-info/
 workspace/xrobot_toolkit/
 workspace/deps/
+workspace/xrobot_relay.env
 
 # Model artifacts copied in manually
 models/**/*.onnx

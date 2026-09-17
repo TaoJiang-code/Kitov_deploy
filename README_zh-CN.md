@@ -51,16 +51,19 @@ scripts/debug/openarm_hardware_tuner.py
 scripts/debug/replay_xrobot_frame.py
 scripts/debug/check_policy_model.py
 scripts/debug/replay_bfm_policy.py
-scripts/xrobot_policy_infer.py
-scripts/xrobot_rgmt_policy_infer.py
-scripts/xrobot_bumi_rgmt_policy_real.py
-scripts/xrobot_openarm_control.py
-scripts/run_openarm_teleop.sh
-scripts/run_bumi_policy_sim.sh
-scripts/run_bumi_rgmt_policy_sim.sh
-scripts/run_bumi_policy_real.sh
-scripts/run_g1_policy_sim.sh
+scripts/launch/g1/xrobot_policy_infer.py
+scripts/launch/bumi/xrobot_rgmt_policy_infer.py
+scripts/launch/bumi/xrobot_bumi_rgmt_policy_real.py
+scripts/launch/openarm/xrobot_openarm_control.py
+scripts/launch/openarm/run_openarm_teleop.sh
+scripts/launch/bumi/run_bumi_policy_sim.sh
+scripts/launch/bumi/run_bumi_rgmt_policy_sim.sh
+scripts/launch/bumi/run_bumi_policy_real.sh
+scripts/launch/g1/run_g1_policy_sim.sh
+scripts/launch/relay/xrobot_frame_relay.py
+scripts/launch/relay/run_xrobot_frame_relay.sh
 kitov_deploy/xrobot_stream.py
+kitov_deploy/xrobot_relay.py
 kitov_deploy/gmr_online.py
 kitov_deploy/hardware/openarm_can_bridge.py
 kitov_deploy/hardware/bumi_noetix_bridge.py
@@ -75,6 +78,102 @@ configs/hardware/bumi_noetix.json
 configs/policy/g1.json
 configs/policy/bumi.json
 configs/policy/bumi_rgmt.json
+```
+
+启动入口集中在 `scripts/launch/`：
+
+```text
+scripts/launch/
+  launch.sh
+  g1/
+  bumi/
+  openarm/
+  relay/
+```
+
+推荐使用交互式启动器：
+
+```bash
+./scripts/launch/launch.sh
+```
+
+启动器可以选择 G1、BUMI 或 OpenArm。选择 BUMI 后可以继续选择 BFM 仿真、RGMT 仿真或
+RGMT 真机；选择 RGMT 真机后再选择 x86 relay 端或 BUMI 策略端。也可以直接指定目标，
+跳过第一层菜单：
+
+```bash
+./scripts/launch/launch.sh g1
+./scripts/launch/launch.sh bumi
+./scripts/launch/launch.sh openarm
+```
+
+各机器人目录下的脚本也可以直接运行。
+
+在启动器中选择 `2. BUMI -> 3. RGMT 真机 -> 1. x86 端` 后，会显示当前 relay 的目标
+IP 和 UDP 端口。选择 `2. BUMI 端` 后，会显示 x86 源 IP 和 BUMI 监听端口。两边直接
+回车表示确认；输入新值后会保存到：
+
+```text
+workspace/xrobot_relay.env
+```
+
+下次选择 x86 端或直接运行 relay 脚本时会自动读取这个配置。
+
+## 4090 与 BUMI 分机部署
+
+如果 4090 机器负责接收 PICO，而 GMR 和 RGMT 在 BUMI 板卡上运行，使用下面的
+UDP relay。传输内容是原始 XRobot Unity pose；4090 不做坐标转换、不做 GMR、不做策略推理，
+也不发送电机目标。BUMI 端收到后才做坐标转换、GMR 和 RGMT：
+
+```text
+PICO app -> 4090 PC Service -> xrobot_frame_relay
+                                  | UDP 47001
+                                  v
+                         BUMI UDP receiver -> GMR -> RGMT -> Noetix DDS
+```
+
+示例网络地址：4090 使用 `192.168.110.84`，BUMI 使用 `192.168.110.83`。PICO App
+填写 `192.168.110.84`，UDP relay 目标填写 BUMI 地址。两台机器之间需要放通
+`47001/udp`，BUMI 原有的 DDS 控制网络保持不变。
+
+4090 Ubuntu 20.04 上，确保已经安装当前 uv 环境里的 `xrobotoolkit_sdk`，然后启动：
+
+```bash
+KITOV_XROBOT_RELAY_TARGET_HOST=192.168.110.83 \
+KITOV_XROBOT_RELAY_TARGET_PORT=47001 \
+./scripts/launch/relay/run_xrobot_frame_relay.sh
+```
+
+该脚本会自动检查并启动本机 `/opt/apps/roboticsservice/runService.sh`；如果是它启动的，
+按 `Ctrl+C` 时会先退出 relay，再关闭本次启动的 PC Service。只启动 relay 不管理服务时，
+设置 `KITOV_STOP_ROBOTICS_SERVICE_ON_EXIT=0`。
+
+BUMI 板卡上不需要安装或启动 XRoboToolkit PC Service，直接监听 UDP 并运行 RGMT 真机：
+
+```bash
+KITOV_BUMI_BODY_SOURCE=udp \
+KITOV_BUMI_BODY_SOURCE_HOST=192.168.110.84 \
+KITOV_BUMI_BODY_BIND_ADDRESS=0.0.0.0 \
+KITOV_BUMI_BODY_PORT=47001 \
+./scripts/launch/bumi/run_bumi_policy_real.sh
+```
+
+UDP 模式下 BUMI 脚本会跳过本地 PC Service。没有新的 UDP 人体帧时，BUMI 保留最后收到的
+GMR/RGMT reference，不会因为短暂丢包自动切回 damping。第一次运行仍然需要按 `0` 复位，
+再按 `1` 进入 RGMT policy；按 `p` 返回 damping。
+
+启动日志中应分别看到：
+
+```text
+4090: [xrobot_frame_relay] ... target=192.168.110.83:47001
+BUMI: [xrobot_bumi_rgmt_policy_real] ... body_source=udp
+```
+
+如果要先在 BUMI 上验证“UDP 接收 -> GMR -> RGMT -> MuJoCo”，可以运行：
+
+```bash
+KITOV_BUMI_BODY_SOURCE=udp \
+./scripts/launch/bumi/run_bumi_rgmt_policy_sim.sh
 ```
 
 在线重定向目前支持：
@@ -175,7 +274,7 @@ scripts/tool/setup_env.sh
 2) build       编译 lowcontrol_py/highcontrol_py/mediacontrol_py
 ```
 
-如果要跑 `scripts/run_bumi_policy_real.sh`，这一步需要选 `build`，否则实机入口找不到
+如果要跑 `scripts/launch/bumi/run_bumi_policy_real.sh`，这一步需要选 `build`，否则实机入口找不到
 `third_party/noetix_sdk_bumi/build/lowcontrol_py*.so`。编译时如果缺少 Eigen3，脚本会自动
 安装 `libeigen3-dev`。
 
@@ -613,13 +712,13 @@ openarm-can-cli -i can1 can_configure
 本次控制程序并关闭 `RoboticsServiceProcess`：
 
 ```bash
-./scripts/run_openarm_teleop.sh
+./scripts/launch/openarm/run_openarm_teleop.sh
 ```
 
 默认等价于：
 
 ```bash
-uv run python scripts/xrobot_openarm_control.py \
+uv run python scripts/launch/openarm/xrobot_openarm_control.py \
   --hz 50 \
   --quiet-gmr \
   --send \
@@ -632,7 +731,7 @@ uv run python scripts/xrobot_openarm_control.py \
 额外参数可以直接追加到脚本后面，例如：
 
 ```bash
-./scripts/run_openarm_teleop.sh --print-targets head
+./scripts/launch/openarm/run_openarm_teleop.sh --print-targets head
 ```
 
 可选环境变量：
@@ -655,7 +754,7 @@ uv run python scripts/debug/openarm_can_probe.py --hz 10 --print-every 1
 实时 XRobot -> GMR -> OpenArm 硬件目标 dry-run，只打印目标，不 import `openarm_can`，也不发 CAN：
 
 ```bash
-uv run python scripts/xrobot_openarm_control.py --hz 50 --quiet-gmr --print-targets head
+uv run python scripts/launch/openarm/xrobot_openarm_control.py --hz 50 --quiet-gmr --print-targets head
 ```
 
 带 MuJoCo viewer 的 dry-run。这个 viewer 显示的是经过 `sign / zero_offset /
@@ -663,7 +762,7 @@ hardware_lower / hardware_upper / max_velocity_rad_s` 之后的命令 qpos，不
 GMR IK qpos：
 
 ```bash
-uv run python scripts/xrobot_openarm_control.py \
+uv run python scripts/launch/openarm/xrobot_openarm_control.py \
   --hz 50 \
   --quiet-gmr \
   --viewer \
@@ -679,7 +778,7 @@ uv run python scripts/xrobot_openarm_control.py \
 真正发送到实机必须显式加 `--send --enable-motors`：
 
 ```bash
-uv run python scripts/xrobot_openarm_control.py \
+uv run python scripts/launch/openarm/xrobot_openarm_control.py \
   --hz 50 \
   --quiet-gmr \
   --send \
@@ -691,7 +790,7 @@ uv run python scripts/xrobot_openarm_control.py \
 `--enable-ee-control`：
 
 ```bash
-uv run python scripts/xrobot_openarm_control.py \
+uv run python scripts/launch/openarm/xrobot_openarm_control.py \
   --hz 50 \
   --quiet-gmr \
   --send \
@@ -785,7 +884,7 @@ uv run python scripts/debug/check_policy_model.py --robot bumi --check-fk
 运行实时 XRobot -> GMR -> policy 推理，但不打开 MuJoCo 窗口：
 
 ```bash
-uv run python scripts/xrobot_policy_infer.py \
+uv run python scripts/launch/g1/xrobot_policy_infer.py \
   --robot bumi \
   --model-dir models/bumi/kitov_fb_bumi_action_scale_0.5 \
   --hz 50 \
@@ -796,7 +895,7 @@ uv run python scripts/xrobot_policy_infer.py \
 运行实时 XRobot -> GMR -> policy -> MuJoCo sim2sim viewer：
 
 ```bash
-uv run python scripts/xrobot_policy_infer.py \
+uv run python scripts/launch/g1/xrobot_policy_infer.py \
   --robot bumi \
   --model-dir models/bumi/kitov_fb_bumi_action_scale_0.5 \
   --hz 50 \
@@ -829,13 +928,13 @@ p / P: damping 阻尼模式
 短启动脚本等价于上面的 BUMI 命令，也会打开两个窗口：
 
 ```bash
-scripts/run_bumi_policy_sim.sh
+scripts/launch/bumi/run_bumi_policy_sim.sh
 ```
 
 BUMI RGMT 走另一条模型线，不经过 `backward_encoder.onnx`：
 
 ```bash
-uv run python scripts/xrobot_rgmt_policy_infer.py \
+uv run python scripts/launch/bumi/xrobot_rgmt_policy_infer.py \
   --model-dir models/bumi/rgmt \
   --hz 50 \
   --offset-to-ground \
@@ -848,13 +947,13 @@ uv run python scripts/xrobot_rgmt_policy_infer.py \
 短启动脚本：
 
 ```bash
-scripts/run_bumi_rgmt_policy_sim.sh
+scripts/launch/bumi/run_bumi_rgmt_policy_sim.sh
 ```
 
 BUMI RGMT 实机入口使用 Noetix SDK：
 
 ```bash
-scripts/run_bumi_policy_real.sh
+scripts/launch/bumi/run_bumi_policy_real.sh
 ```
 
 这个脚本会先检查 `RoboticsServiceProcess` 是否已经运行；如果没有，会自动执行
@@ -862,7 +961,7 @@ scripts/run_bumi_policy_real.sh
 控制程序，再关闭本次启动的 XRoboToolkit PC Service。需要保留服务不关时：
 
 ```bash
-KITOV_STOP_ROBOTICS_SERVICE_ON_EXIT=0 scripts/run_bumi_policy_real.sh
+KITOV_STOP_ROBOTICS_SERVICE_ON_EXIT=0 scripts/launch/bumi/run_bumi_policy_real.sh
 ```
 
 脚本默认会连接 `third_party/noetix_sdk_bumi`，并发送电机命令。启动后默认是 damping
@@ -894,7 +993,7 @@ configs/hardware/bumi_noetix.json
 PICO/GMR reference，而不是复制最新帧。要关掉这个延迟可以显式加：
 
 ```bash
-scripts/run_bumi_rgmt_policy_sim.sh --reference-delay-frames 0
+scripts/launch/bumi/run_bumi_rgmt_policy_sim.sh --reference-delay-frames 0
 ```
 
 RGMT 输入对齐训练侧四路输入：
@@ -910,7 +1009,7 @@ G1：
 
 ```bash
 uv run python scripts/debug/check_policy_model.py --robot g1 --check-fk
-uv run python scripts/xrobot_policy_infer.py \
+uv run python scripts/launch/g1/xrobot_policy_infer.py \
   --robot g1 \
   --model-dir models/g1/kitov_fb_g1 \
   --hz 50 \
@@ -922,7 +1021,7 @@ uv run python scripts/xrobot_policy_infer.py \
   --elastic-band \
   --elastic-length 1.5
 
-scripts/run_g1_policy_sim.sh
+scripts/launch/g1/run_g1_policy_sim.sh
 ```
 
 推理 runtime 按 Kitov 训练导出的 metadata 拼输入：

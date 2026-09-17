@@ -15,7 +15,9 @@ from typing import Any
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = next(
+    parent for parent in Path(__file__).resolve().parents if (parent / "pyproject.toml").exists()
+)
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -24,6 +26,7 @@ from kitov_deploy.gmr_viewer_process import GMRViewerProcess
 from kitov_deploy.mujoco_policy_sim import MujocoPolicySim
 from kitov_deploy.policy_runtime import RobotState
 from kitov_deploy.rgmt_runtime import DEFAULT_RGMT_MODEL_DIR, BumiRGMTRuntime
+from kitov_deploy.xrobot_relay import UdpXRobotBodyReceiver
 from kitov_deploy.xrobot_stream import XRobotBodyStreamer
 
 
@@ -88,6 +91,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--ground-offset", type=float, default=0.0, help="Subtract this z offset from all human targets.")
     parser.add_argument("--offset-to-ground", action="store_true", help="Shift each frame so the lowest foot target sits above ground.")
     parser.add_argument("--device", default="cpu", help="Torch device, e.g. cpu or cuda.")
+    parser.add_argument(
+        "--body-source",
+        choices=["local", "udp"],
+        default="local",
+        help="Read PICO frames from the local SDK or from the UDP relay.",
+    )
+    parser.add_argument("--body-bind-address", default="0.0.0.0", help="UDP bind address when --body-source=udp.")
+    parser.add_argument("--body-port", type=int, default=47001, help="UDP port when --body-source=udp.")
+    parser.add_argument("--body-source-host", default=None, help="Only accept UDP frames from this x86 host.")
     parser.add_argument("--debug", action="store_true", help="Print detailed policy/sim diagnostics.")
     parser.add_argument("--quiet-gmr", action="store_true", help="Suppress GMR model/body/dof listing.")
     parser.add_argument("--print-q-target", choices=["none", "head", "all"], default="none", help="How much q_target to print.")
@@ -183,7 +195,15 @@ def main() -> int:
     signal.signal(signal.SIGINT, _request_stop)
     signal.signal(signal.SIGTERM, _request_stop)
 
-    streamer = XRobotBodyStreamer()
+    streamer = (
+        XRobotBodyStreamer()
+        if args.body_source == "local"
+        else UdpXRobotBodyReceiver(
+            bind_address=args.body_bind_address,
+            port=args.body_port,
+            source_host=args.body_source_host,
+        )
+    )
     retargeter = OnlineGMRRetargeter(
         "bumi",
         gmr_root=args.gmr_root,
@@ -251,6 +271,8 @@ def main() -> int:
         f"robot=bumi qpos={retargeter.robot_qpos_size} "
         f"policy={policy.config.model_path} rgmt_config={policy.config.config_path}"
         f" reference_delay_frames={reference_delay_frames}"
+        f" body_source={args.body_source}"
+        + (f" body_source_host={args.body_source_host}" if args.body_source == "udp" else "")
         + (f" mujoco_xml={policy.robot_config.xml_path} sim_substeps={sim.sim_substeps}" if sim else "")
         + (" gmr_viewer=on" if gmr_viewer is not None else "")
     )

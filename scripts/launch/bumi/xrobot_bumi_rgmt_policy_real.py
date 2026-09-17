@@ -15,7 +15,9 @@ from typing import Any
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = next(
+    parent for parent in Path(__file__).resolve().parents if (parent / "pyproject.toml").exists()
+)
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -28,6 +30,7 @@ from kitov_deploy.hardware.bumi_noetix_bridge import (
 )
 from kitov_deploy.policy_runtime import RobotState
 from kitov_deploy.rgmt_runtime import DEFAULT_RGMT_MODEL_DIR, BumiRGMTRuntime
+from kitov_deploy.xrobot_relay import UdpXRobotBodyReceiver
 from kitov_deploy.xrobot_stream import XRobotBodyStreamer
 
 
@@ -89,6 +92,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--ground-offset", type=float, default=0.0)
     parser.add_argument("--offset-to-ground", action="store_true")
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--body-source",
+        choices=["local", "udp"],
+        default="local",
+        help="Read PICO frames from the local SDK or from the UDP relay.",
+    )
+    parser.add_argument("--body-bind-address", default="0.0.0.0", help="UDP bind address when --body-source=udp.")
+    parser.add_argument("--body-port", type=int, default=47001, help="UDP port when --body-source=udp.")
+    parser.add_argument("--body-source-host", default=None, help="Only accept UDP frames from this x86 host.")
     parser.add_argument("--quiet-gmr", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--send", action="store_true", help="Actually send commands to Noetix BUMI. Without this, dry-run only.")
@@ -159,7 +171,15 @@ def main() -> int:
     signal.signal(signal.SIGINT, _request_stop)
     signal.signal(signal.SIGTERM, _request_stop)
 
-    streamer = XRobotBodyStreamer()
+    streamer = (
+        XRobotBodyStreamer()
+        if args.body_source == "local"
+        else UdpXRobotBodyReceiver(
+            bind_address=args.body_bind_address,
+            port=args.body_port,
+            source_host=args.body_source_host,
+        )
+    )
     retargeter = OnlineGMRRetargeter(
         "bumi",
         gmr_root=args.gmr_root,
@@ -213,7 +233,9 @@ def main() -> int:
     print(
         "[xrobot_bumi_rgmt_policy_real] started "
         f"policy={policy.config.model_path} rgmt_config={policy.config.config_path} "
-        f"hardware_config={hardware_config.path} reference_delay_frames={reference_delay_frames}"
+        f"hardware_config={hardware_config.path} reference_delay_frames={reference_delay_frames} "
+        f"body_source={args.body_source}"
+        + (f" body_source_host={args.body_source_host}" if args.body_source == "udp" else "")
     )
     print("[xrobot_bumi_rgmt_policy_real] keys: p=damping, 0=rate-limited joint zero, 1=policy")
 

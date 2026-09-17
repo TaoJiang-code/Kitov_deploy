@@ -54,16 +54,19 @@ scripts/debug/openarm_hardware_tuner.py
 scripts/debug/replay_xrobot_frame.py
 scripts/debug/check_policy_model.py
 scripts/debug/replay_bfm_policy.py
-scripts/xrobot_policy_infer.py
-scripts/xrobot_rgmt_policy_infer.py
-scripts/xrobot_bumi_rgmt_policy_real.py
-scripts/xrobot_openarm_control.py
-scripts/run_openarm_teleop.sh
-scripts/run_bumi_policy_sim.sh
-scripts/run_bumi_rgmt_policy_sim.sh
-scripts/run_bumi_policy_real.sh
-scripts/run_g1_policy_sim.sh
+scripts/launch/g1/xrobot_policy_infer.py
+scripts/launch/bumi/xrobot_rgmt_policy_infer.py
+scripts/launch/bumi/xrobot_bumi_rgmt_policy_real.py
+scripts/launch/openarm/xrobot_openarm_control.py
+scripts/launch/openarm/run_openarm_teleop.sh
+scripts/launch/bumi/run_bumi_policy_sim.sh
+scripts/launch/bumi/run_bumi_rgmt_policy_sim.sh
+scripts/launch/bumi/run_bumi_policy_real.sh
+scripts/launch/g1/run_g1_policy_sim.sh
+scripts/launch/relay/xrobot_frame_relay.py
+scripts/launch/relay/run_xrobot_frame_relay.sh
 kitov_deploy/xrobot_stream.py
+kitov_deploy/xrobot_relay.py
 kitov_deploy/gmr_online.py
 kitov_deploy/hardware/openarm_can_bridge.py
 kitov_deploy/hardware/bumi_noetix_bridge.py
@@ -78,6 +81,108 @@ configs/hardware/bumi_noetix.json
 configs/policy/g1.json
 configs/policy/bumi.json
 configs/policy/bumi_rgmt.json
+```
+
+Launch entrypoints are grouped under `scripts/launch/`:
+
+```text
+scripts/launch/
+  launch.sh
+  g1/
+  bumi/
+  openarm/
+  relay/
+```
+
+Use the interactive launcher:
+
+```bash
+./scripts/launch/launch.sh
+```
+
+It lets you choose G1, BUMI, or OpenArm. The BUMI menu then selects BFM simulation,
+RGMT simulation, or RGMT real hardware; the RGMT real-hardware menu then selects
+the x86 relay side or the BUMI policy side. You can also skip the first menu:
+
+```bash
+./scripts/launch/launch.sh g1
+./scripts/launch/launch.sh bumi
+./scripts/launch/launch.sh openarm
+```
+
+Each robot directory also contains its direct launch scripts.
+
+When selecting `2. BUMI -> 3. RGMT real hardware -> 1. x86`, the launcher shows
+the current relay target IP and UDP port. The `2. BUMI` option shows the x86 source
+IP and BUMI listen port. Press Enter to keep each default, or enter a new value to
+save it to:
+
+```text
+workspace/xrobot_relay.env
+```
+
+The next x86 relay launch reads this configuration automatically.
+
+## Split 4090 and BUMI Deployment
+
+If the 4090 PC receives PICO while GMR and RGMT must run on the BUMI board, use
+the UDP relay below. It forwards raw XRobot Unity poses only; the 4090 does not
+perform coordinate conversion, GMR, policy inference, or motor control. BUMI
+performs coordinate conversion, GMR, RGMT inference, and Noetix DDS control:
+
+```text
+PICO app -> 4090 PC Service -> xrobot_frame_relay
+                                  | UDP 47001
+                                  v
+                         BUMI UDP receiver -> GMR -> RGMT -> Noetix DDS
+```
+
+Example addresses: `192.168.110.84` for the 4090 and `192.168.110.83` for BUMI.
+Enter `192.168.110.84` in the PICO App and send UDP to BUMI on `47001`. Allow
+`47001/udp` between the two machines; keep the existing BUMI DDS control network
+unchanged.
+
+On the Ubuntu 20.04 4090, install `xrobotoolkit_sdk` into the active uv
+environment and start the relay:
+
+```bash
+KITOV_XROBOT_RELAY_TARGET_HOST=192.168.110.83 \
+KITOV_XROBOT_RELAY_TARGET_PORT=47001 \
+./scripts/launch/relay/run_xrobot_frame_relay.sh
+```
+
+The relay launcher checks and starts `/opt/apps/roboticsservice/runService.sh`.
+If it started the service, `Ctrl+C` stops the relay and then that PC Service
+instance. Set `KITOV_STOP_ROBOTICS_SERVICE_ON_EXIT=0` to leave the service running.
+
+On BUMI, do not install or start XRoboToolkit PC Service. Listen for UDP and run
+the existing RGMT real-hardware entrypoint:
+
+```bash
+KITOV_BUMI_BODY_SOURCE=udp \
+KITOV_BUMI_BODY_SOURCE_HOST=192.168.110.84 \
+KITOV_BUMI_BODY_BIND_ADDRESS=0.0.0.0 \
+KITOV_BUMI_BODY_PORT=47001 \
+./scripts/launch/bumi/run_bumi_policy_real.sh
+```
+
+In UDP mode the BUMI launcher skips the local PC Service. Missing UDP body frames
+keep the last GMR/RGMT reference, so a short network interruption does not switch
+the robot to damping. The startup sequence remains: press `0` to reset, then `1`
+to enter RGMT policy; press `p` to return to damping.
+
+Expected startup lines:
+
+```text
+4090: [xrobot_frame_relay] ... target=192.168.110.83:47001
+BUMI: [xrobot_bumi_rgmt_policy_real] ... body_source=udp
+```
+
+To validate UDP receive -> GMR -> RGMT -> MuJoCo on BUMI first:
+
+```bash
+KITOV_BUMI_BODY_SOURCE=udp \
+./scripts/launch/bumi/run_bumi_rgmt_policy_sim.sh
 ```
 
 Supported online retargeting targets:
@@ -181,7 +286,7 @@ Finally, the script asks whether to build the BUMI Noetix SDK:
 2) build       build lowcontrol_py/highcontrol_py/mediacontrol_py
 ```
 
-Choose `build` before running `scripts/run_bumi_policy_real.sh`; otherwise the
+Choose `build` before running `scripts/launch/bumi/run_bumi_policy_real.sh`; otherwise the
 real-hardware entrypoint cannot import
 `third_party/noetix_sdk_bumi/build/lowcontrol_py*.so`. If Eigen3 headers are
 missing, the script installs `libeigen3-dev` automatically.
@@ -642,13 +747,13 @@ realtime control. `Ctrl+C` stops the control process and shuts down
 `RoboticsServiceProcess`:
 
 ```bash
-./scripts/run_openarm_teleop.sh
+./scripts/launch/openarm/run_openarm_teleop.sh
 ```
 
 By default this is equivalent to:
 
 ```bash
-uv run python scripts/xrobot_openarm_control.py \
+uv run python scripts/launch/openarm/xrobot_openarm_control.py \
   --hz 50 \
   --quiet-gmr \
   --send \
@@ -661,7 +766,7 @@ uv run python scripts/xrobot_openarm_control.py \
 Extra arguments are appended to the Python command:
 
 ```bash
-./scripts/run_openarm_teleop.sh --print-targets head
+./scripts/launch/openarm/run_openarm_teleop.sh --print-targets head
 ```
 
 Optional environment variables:
@@ -685,7 +790,7 @@ Live XRobot -> GMR -> OpenArm hardware target dry-run. This only prints targets;
 it does not import `openarm_can` or send CAN frames:
 
 ```bash
-uv run python scripts/xrobot_openarm_control.py --hz 50 --quiet-gmr --print-targets head
+uv run python scripts/launch/openarm/xrobot_openarm_control.py --hz 50 --quiet-gmr --print-targets head
 ```
 
 Dry-run with MuJoCo viewer. This viewer shows the command qpos after
@@ -693,7 +798,7 @@ Dry-run with MuJoCo viewer. This viewer shows the command qpos after
 not the raw GMR IK qpos:
 
 ```bash
-uv run python scripts/xrobot_openarm_control.py \
+uv run python scripts/launch/openarm/xrobot_openarm_control.py \
   --hz 50 \
   --quiet-gmr \
   --viewer \
@@ -710,7 +815,7 @@ targets that would be sent to hardware.
 Real hardware sending requires explicit `--send --enable-motors`:
 
 ```bash
-uv run python scripts/xrobot_openarm_control.py \
+uv run python scripts/launch/openarm/xrobot_openarm_control.py \
   --hz 50 \
   --quiet-gmr \
   --send \
@@ -722,7 +827,7 @@ If `configs/hardware/openarm_v1.json` selects an end-effector, for example
 grippers from PICO triggers:
 
 ```bash
-uv run python scripts/xrobot_openarm_control.py \
+uv run python scripts/launch/openarm/xrobot_openarm_control.py \
   --hz 50 \
   --quiet-gmr \
   --send \
@@ -828,7 +933,7 @@ uv run python scripts/debug/check_policy_model.py --robot bumi --check-fk
 Run live XRobot -> GMR -> policy inference without a MuJoCo window:
 
 ```bash
-uv run python scripts/xrobot_policy_infer.py \
+uv run python scripts/launch/g1/xrobot_policy_infer.py \
   --robot bumi \
   --model-dir models/bumi/kitov_fb_bumi_action_scale_0.5 \
   --hz 50 \
@@ -839,7 +944,7 @@ uv run python scripts/xrobot_policy_infer.py \
 Run live XRobot -> GMR -> policy -> MuJoCo sim2sim viewer:
 
 ```bash
-uv run python scripts/xrobot_policy_infer.py \
+uv run python scripts/launch/g1/xrobot_policy_infer.py \
   --robot bumi \
   --model-dir models/bumi/kitov_fb_bumi_action_scale_0.5 \
   --hz 50 \
@@ -873,13 +978,13 @@ p / P: damping
 The short launcher is equivalent and opens both windows:
 
 ```bash
-scripts/run_bumi_policy_sim.sh
+scripts/launch/bumi/run_bumi_policy_sim.sh
 ```
 
 BUMI RGMT uses a separate policy path and does not use `backward_encoder.onnx`:
 
 ```bash
-uv run python scripts/xrobot_rgmt_policy_infer.py \
+uv run python scripts/launch/bumi/xrobot_rgmt_policy_infer.py \
   --model-dir models/bumi/rgmt \
   --hz 50 \
   --offset-to-ground \
@@ -892,13 +997,13 @@ uv run python scripts/xrobot_rgmt_policy_infer.py \
 Short launcher:
 
 ```bash
-scripts/run_bumi_rgmt_policy_sim.sh
+scripts/launch/bumi/run_bumi_rgmt_policy_sim.sh
 ```
 
 BUMI RGMT real-hardware entrypoint through the Noetix SDK:
 
 ```bash
-scripts/run_bumi_policy_real.sh
+scripts/launch/bumi/run_bumi_policy_real.sh
 ```
 
 This launcher first checks whether `RoboticsServiceProcess` is running. If it is
@@ -907,7 +1012,7 @@ started the service, `Ctrl+C` stops the control process and then stops that
 XRoboToolkit PC Service instance. To keep the service running after exit:
 
 ```bash
-KITOV_STOP_ROBOTICS_SERVICE_ON_EXIT=0 scripts/run_bumi_policy_real.sh
+KITOV_STOP_ROBOTICS_SERVICE_ON_EXIT=0 scripts/launch/bumi/run_bumi_policy_real.sh
 ```
 
 The launcher connects to `third_party/noetix_sdk_bumi` and sends motor commands.
@@ -941,7 +1046,7 @@ frames by default. With the current config this is 10 frames, about 0.2s at
 instead of repeating the newest frame. To disable it:
 
 ```bash
-scripts/run_bumi_rgmt_policy_sim.sh --reference-delay-frames 0
+scripts/launch/bumi/run_bumi_rgmt_policy_sim.sh --reference-delay-frames 0
 ```
 
 The RGMT inputs follow the training-side policy signature:
@@ -957,7 +1062,7 @@ For G1:
 
 ```bash
 uv run python scripts/debug/check_policy_model.py --robot g1 --check-fk
-uv run python scripts/xrobot_policy_infer.py \
+uv run python scripts/launch/g1/xrobot_policy_infer.py \
   --robot g1 \
   --model-dir models/g1/kitov_fb_g1 \
   --hz 50 \
@@ -969,7 +1074,7 @@ uv run python scripts/xrobot_policy_infer.py \
   --elastic-band \
   --elastic-length 1.5
 
-scripts/run_g1_policy_sim.sh
+scripts/launch/g1/run_g1_policy_sim.sh
 ```
 
 The inference runtime follows the Kitov training export metadata:
